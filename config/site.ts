@@ -1,18 +1,18 @@
 export type SiteConfig = typeof siteConfig
 
 export const siteConfig = {
-  name: "Next.js",
+  name: "InboxerAI",
+  tagline: "LLM-powered Gmail ingestion",
   description:
-    "Beautifully designed components built with Radix UI and Tailwind CSS.",
+    "Connect your Gmail inbox, extract structured answers from every thread, and feed Qdrant for AI-powered replies.",
   mainNav: [
     {
-      title: "Home",
+      title: "Inbox",
       href: "/",
     },
   ],
   links: {
-    twitter: "https://twitter.com/shadcn",
-    github: "https://github.com/shadcn/ui",
-    docs: "https://ui.shadcn.com",
+    github: "#",
+    docs: "#",
   },
 }
