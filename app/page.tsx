@@ -1,8 +1,5 @@
 import { cookies } from "next/headers"
 
-import { ConnectGoogleButton } from "@/components/connect-google-button"
-import { GmailThreadList } from "@/components/gmail-thread-list"
-import { SyncThreadsPanel } from "@/components/sync-threads-panel"
 import { siteConfig } from "@/config/site"
 import {
   GOOGLE_OAUTH_SESSION_COOKIE,
@@ -12,6 +9,10 @@ import {
   type GmailThreadSummary,
   type GoogleUserProfile,
 } from "@/lib/google-auth"
+import { ConnectGoogleButton } from "@/components/connect-google-button"
+import { GmailThreadList } from "@/components/gmail-thread-list"
+import { InitialIngestPanel } from "@/components/initial-ingest-panel"
+import { SyncThreadsPanel } from "@/components/sync-threads-panel"
 
 interface IndexPageProps {
   searchParams?: Record<string, string | string[]>
@@ -45,115 +46,19 @@ export default async function IndexPage({ searchParams = {} }: IndexPageProps) {
 
   return (
     <main className="container flex flex-col gap-12 pb-12 pt-8">
-      <section className="grid gap-10 lg:grid-cols-[1.7fr,1fr]">
-        <div className="space-y-8">
-          <div className="space-y-4">
-            <p className="text-sm font-medium text-primary">
-              {siteConfig.tagline}
-            </p>
-            <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
-              Build a reply-ready inbox with AI-powered context.
-            </h1>
-            <p className="max-w-2xl text-lg text-muted-foreground">
-              InboxerAI connects to Gmail, understands every thread with large
-              language models, and stores question &amp; answer summaries that
-              power automated, context-aware replies.
-            </p>
-          </div>
-          <div className="space-y-4">
-            <ConnectGoogleButton profile={profile} gmail={gmail} />
-            {status ? (
-              <p
-                className={`text-sm ${
-                  status.variant === "success"
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : status.variant === "info"
-                    ? "text-muted-foreground"
-                    : "text-destructive"
-                }`}
-              >
-                {status.message}
-              </p>
-            ) : null}
-            <p className="text-sm text-muted-foreground">
-              You will be prompted to grant Gmail read access. We request
-              offline access so InboxerAI can periodically ingest new threads.
-            </p>
-            {profile ? (
-              <SyncThreadsPanel threads={recentThreads} />
-            ) : null}
-          </div>
-        </div>
-        <aside className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-foreground">
-              Recent Gmail threads
-            </h2>
-            {gmail ? (
-              <span className="text-xs text-muted-foreground">
-                {gmail.threadsTotal.toLocaleString()} total threads
-              </span>
-            ) : null}
-          </div>
-          <div className="space-y-3">
-            {profile ? (
-              <GmailThreadList threads={recentThreads} error={threadsError} />
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Connect your Gmail account to preview the latest threads here.
-              </p>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Only metadata is shown here. Full message bodies stay in Gmail until
-            they are processed by the ingestion pipeline.
-          </p>
-        </aside>
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-3">
-        {FEATURE_POINTS.map((feature) => (
-          <div
-            key={feature.title}
-            className="space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm"
-          >
-            <h3 className="text-lg font-semibold text-foreground">
-              {feature.title}
-            </h3>
-            <p className="text-sm text-muted-foreground">{feature.description}</p>
-          </div>
-        ))}
-      </section>
+      {profile ? (
+        <section className="grid gap-6">
+          <InitialIngestPanel gmailThreadCount={gmail?.threadsTotal} />
+        </section>
+      ) : null}
     </main>
   )
 }
 
-const FEATURE_POINTS = [
-  {
-    title: "Thread Intelligence",
-    description:
-      "Extract question & answer pairs from every Gmail conversation so replies reflect the full history.",
-  },
-  {
-    title: "Vector Knowledge Base",
-    description:
-      "Push structured summaries into Qdrant for fast semantic retrieval when new messages arrive.",
-  },
-  {
-    title: "Composable Prompts",
-    description:
-      "Tune the prompting library and processing settings directly in InboxerAI as your workflows evolve.",
-  },
-]
-
-function mapGoogleQueryToStatus(
-  params: Record<string, string | string[]>
-):
-  | {
-      variant: "success" | "error" | "info"
-      message: string
-    }
-  | null {
+function mapGoogleQueryToStatus(params: Record<string, string | string[]>): {
+  variant: "success" | "error" | "info"
+  message: string
+} | null {
   const google = getQueryValue(params.google)
   const reason = getQueryValue(params.reason)
 
@@ -171,7 +76,8 @@ function mapGoogleQueryToStatus(
     case "disconnected":
       return {
         variant: "info",
-        message: "Google account disconnected. Connect again when you're ready.",
+        message:
+          "Google account disconnected. Connect again when you're ready.",
       }
     case "error":
       return {

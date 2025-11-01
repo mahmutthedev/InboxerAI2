@@ -23,7 +23,7 @@ export interface ThreadQAEntry {
   answer: string
 }
 
-const DEFAULT_RESPONSE_MODEL = process.env.OPENAI_RESPONSE_MODEL ?? "gpt-4o-mini"
+const DEFAULT_RESPONSE_MODEL = process.env.OPENAI_RESPONSE_MODEL ?? "gpt-5-nano"
 const DEFAULT_EMBEDDING_MODEL =
   process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small"
 

@@ -1,11 +1,10 @@
-import { createHash } from "crypto"
-
 import { NextRequest, NextResponse } from "next/server"
 
 import {
   assertCollectionName,
   ensureQdrantCollection,
   getQdrantClient,
+  createStablePointId,
 } from "@/lib/qdrant"
 import { embedTexts, type ThreadQAEntry } from "@/lib/openai"
 
@@ -61,7 +60,7 @@ export async function POST(request: NextRequest) {
     await ensureQdrantCollection(client, collection, embeddings[0].length)
 
     const points = items.map((item, index) => ({
-      id: generateStableUuid(item.threadId, item.question),
+      id: createStablePointId(item.threadId, item.question),
       vector: embeddings[index],
       payload: {
         threadId: item.threadId,
@@ -72,7 +71,7 @@ export async function POST(request: NextRequest) {
       },
     }))
 
-    await client.upsert(collection, { points })
+    await client.upsert(collection, { points, wait: true })
 
     return NextResponse.json({
       upserted: points.length,
@@ -88,16 +87,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
-
-function generateStableUuid(threadId: string, question: string) {
-  const hash = createHash("sha1")
-    .update(`${threadId}:${question}`)
-    .digest("hex")
-    .slice(0, 32)
-
-  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(
-    12,
-    16
-  )}-${hash.slice(16, 20)}-${hash.slice(20)}`
 }

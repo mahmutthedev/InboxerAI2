@@ -204,6 +204,46 @@ export async function fetchRecentGmailThreads(
   )
 }
 
+export async function fetchAllGmailThreadIds(
+  tokens: Credentials,
+  options: { maxThreads?: number; labelIds?: string[] } = {}
+): Promise<string[]> {
+  const oauthClient = createOAuthClient()
+  oauthClient.setCredentials(tokens)
+
+  const gmail = google.gmail({ version: "v1", auth: oauthClient })
+
+  const maxThreads =
+    options.maxThreads ??
+    Number(process.env.INITIAL_INGEST_MAX_THREADS ?? "200")
+  const labelIds = options.labelIds ?? ["INBOX"]
+
+  const ids: string[] = []
+  let pageToken: string | undefined
+
+  do {
+    const response = await gmail.users.threads.list({
+      userId: "me",
+      labelIds,
+      pageToken,
+      maxResults: 100,
+      includeSpamTrash: false,
+    })
+
+    const pageIds =
+      response.data.threads?.map((thread) => thread.id).filter(Boolean) ?? []
+    ids.push(...(pageIds as string[]))
+
+    if (ids.length >= maxThreads) {
+      return ids.slice(0, maxThreads)
+    }
+
+    pageToken = response.data.nextPageToken ?? undefined
+  } while (pageToken)
+
+  return ids
+}
+
 export async function fetchGmailThreadDetail(
   tokens: Credentials,
   threadId: string

@@ -39,7 +39,6 @@ function createInitialStatusMap(
 }
 
 export function SyncThreadsPanel({ threads }: SyncThreadsPanelProps) {
-  const [expanded, setExpanded] = useState(false)
   const [instructions, setInstructions] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,23 +53,6 @@ export function SyncThreadsPanel({ threads }: SyncThreadsPanelProps) {
     setThreadStatuses(createInitialStatusMap(threads))
   }, [threads])
 
-  const resetState = () => {
-    setInstructions("")
-    setIsProcessing(false)
-    setError(null)
-    setResult(null)
-    setIsIngesting(false)
-    setIngestMessage(null)
-    setThreadStatuses(createInitialStatusMap(threads))
-  }
-
-  const handleToggle = () => {
-    if (expanded) {
-      resetState()
-    }
-    setExpanded((prev) => !prev)
-  }
-
   const handleProcess = async () => {
     if (!threads.length) {
       setError("No threads available to process.")
@@ -80,6 +62,7 @@ export function SyncThreadsPanel({ threads }: SyncThreadsPanelProps) {
     setIsProcessing(true)
     setError(null)
     setResult(null)
+    setIngestMessage(null)
     setThreadStatuses(
       threads.reduce<Record<string, ThreadStatus>>((acc, thread) => {
         acc[thread.id] = { status: "queued" }
@@ -133,12 +116,12 @@ export function SyncThreadsPanel({ threads }: SyncThreadsPanelProps) {
           throw new Error(data.error ?? "Failed to process this thread.")
         }
 
-          const data = (await response.json()) as {
-            threadId: string
-            subject: string
-            createdAt?: string | null
-            questions: ThreadQAEntry[]
-          }
+        const data = (await response.json()) as {
+          threadId: string
+          subject: string
+          createdAt?: string | null
+          questions: ThreadQAEntry[]
+        }
 
         processedResults.push(data)
         setThreadStatuses((prev) => ({
@@ -171,7 +154,7 @@ export function SyncThreadsPanel({ threads }: SyncThreadsPanelProps) {
 
     await Promise.all(workers)
 
-    const consolidated = processedResults.flatMap((result) => result.questions)
+    const consolidated = processedResults.flatMap((detail) => detail.questions)
 
     setResult({
       processedThreads: processedResults.length,
@@ -189,163 +172,167 @@ export function SyncThreadsPanel({ threads }: SyncThreadsPanelProps) {
     }))
   }, [threads, threadStatuses])
 
+  const ingestAvailable =
+    !!result && !isProcessing && hasIngestableItems(result)
+
   return (
-    <div className="space-y-4">
-      <Button onClick={handleToggle} disabled={!threads.length}>
-        {expanded ? "Hide sync panel" : "Sync data"}
-      </Button>
-      {expanded ? (
-        <div className="space-y-6 rounded-lg border border-border bg-card p-6">
-          <div className="space-y-2">
-            <label
-              htmlFor="sync-instructions"
-              className="text-sm font-medium text-foreground"
-            >
-              Additional instructions
-            </label>
-            <Textarea
-              id="sync-instructions"
-              placeholder="Add optional guidance for the LLM (e.g. focus on pricing questions, ignore automated notifications, etc.)."
-              value={instructions}
-              onChange={(event) => setInstructions(event.target.value)}
-              rows={4}
-            />
-            <p className="text-xs text-muted-foreground">
-              The model will always return JSON with <code>question</code> and{" "}
-              <code>answer</code> fields. Additional instructions are optional.
-            </p>
-          </div>
-
-          {result ? (
-            <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-4">
-              <p className="text-sm font-medium text-foreground">
-                Processed {result.processedThreads} threads
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Extracted {result.consolidated.length} question &amp; answer
-                pairs.
-              </p>
-              <pre className="max-h-64 overflow-y-auto rounded bg-background p-3 text-xs text-foreground">
-                {JSON.stringify(result.consolidated, null, 2)}
-              </pre>
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={handleProcess} disabled={isProcessing}>
-              {isProcessing ? "Processing..." : "Process"}
-            </Button>
-            {result && !isProcessing ? (
-              <Button
-                variant="secondary"
-                disabled={isIngesting || !hasIngestableItems(result)}
-                onClick={async () => {
-                  if (!result) return
-
-                  setIsIngesting(true)
-                  setIngestMessage(null)
-
-                  try {
-                    const ingestItems = result.details.flatMap((detail) =>
-                      detail.questions.map((qa) => ({
-                        threadId: detail.threadId,
-                        question: qa.question,
-                        answer: qa.answer,
-                        createdAt: detail.createdAt ?? null,
-                      }))
-                    )
-
-                    if (!ingestItems.length) {
-                      throw new Error(
-                        "No question & answer pairs available for ingestion."
-                      )
-                    }
-
-                    const response = await fetch("/api/qdrant/upsert", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({ items: ingestItems }),
-                    })
-
-                    if (!response.ok) {
-                      const data = await response.json().catch(() => ({}))
-                      throw new Error(
-                        data.error ?? "Failed to upsert into Qdrant."
-                      )
-                    }
-
-                    const data = await response.json()
-                    setIngestMessage(
-                      `Ingested ${data.upserted} items into collection "${data.collection}".`
-                    )
-                  } catch (ingestError) {
-                    console.error("Failed to ingest into Qdrant", ingestError)
-                    setIngestMessage(
-                      ingestError instanceof Error
-                        ? ingestError.message
-                        : "Failed to ingest into Qdrant."
-                    )
-                  } finally {
-                    setIsIngesting(false)
-                  }
-                }}
-              >
-                {isIngesting ? "Ingesting..." : "Ingest into Qdrant"}
-              </Button>
-            ) : null}
-            <span className="text-sm text-muted-foreground">
-              {threads.length} threads queued
-            </span>
-          </div>
-
-          {ingestMessage ? (
-            <p
-              className={`text-sm ${
-                ingestMessage.toLowerCase().startsWith("failed") ||
-                ingestMessage.toLowerCase().includes("error")
-                  ? "text-destructive"
-                  : "text-emerald-600 dark:text-emerald-400"
-              }`}
-            >
-              {ingestMessage}
-            </p>
-          ) : null}
-
-          <div className="max-h-72 space-y-3 overflow-y-auto">
-            <p className="text-sm font-medium text-foreground">
-              Thread progress
-            </p>
-            <ul className="space-y-2">
-              {statusOrder.map(({ thread, status }) => (
-                <li
-                  key={thread.id}
-                  className="flex items-start justify-between rounded-md border border-border bg-background p-3"
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-foreground">
-                      {thread.subject}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {thread.from} {"->"} {thread.to}
-                    </p>
-                    {thread.createdAt ? (
-                      <p className="text-xs text-muted-foreground">
-                        Created {formatTimestamp(thread.createdAt)}
-                      </p>
-                    ) : null}
-                  </div>
-                  <ThreadStatusBadge status={status} />
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {error ? (
-            <p className="text-sm text-destructive">{error}</p>
-          ) : null}
+    <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold text-foreground">
+            Preview & manual ingest
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Run targeted extractions on the most recent {threads.length} inbox
+            threads. Tune the prompt before ingesting into Qdrant.
+          </p>
         </div>
+        <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+          Manual
+        </span>
+      </div>
+
+      <div className="mt-6 space-y-2">
+        <label
+          htmlFor="manual-instructions"
+          className="text-sm font-medium text-foreground"
+        >
+          Additional instructions
+        </label>
+        <Textarea
+          id="manual-instructions"
+          placeholder="Add optional guidance for the LLM (e.g. emphasize pricing updates, ignore signatures, etc.)."
+          value={instructions}
+          onChange={(event) => setInstructions(event.target.value)}
+          rows={4}
+        />
+        <p className="text-xs text-muted-foreground">
+          We store only the extracted question and answer for each thread.
+        </p>
+      </div>
+
+      {result ? (
+        <div className="mt-6 space-y-2 rounded-lg border border-border bg-muted/40 p-4">
+          <p className="text-sm font-medium text-foreground">
+            Processed {result.processedThreads} threads
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Extracted {result.consolidated.length} question &amp; answer pairs.
+          </p>
+          <pre className="max-h-48 overflow-y-auto rounded bg-background p-3 text-xs text-foreground">
+            {JSON.stringify(result.consolidated, null, 2)}
+          </pre>
+        </div>
+      ) : null}
+
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Button onClick={handleProcess} disabled={isProcessing}>
+          {isProcessing ? "Processing..." : "Process recent threads"}
+        </Button>
+        {ingestAvailable ? (
+          <Button
+            variant="secondary"
+            disabled={isIngesting}
+            onClick={async () => {
+              if (!result) return
+
+              setIsIngesting(true)
+              setIngestMessage(null)
+
+              try {
+                const ingestItems = result.details.flatMap((detail) =>
+                  detail.questions.map((qa) => ({
+                    threadId: detail.threadId,
+                    question: qa.question,
+                    answer: qa.answer,
+                    createdAt: detail.createdAt ?? null,
+                  }))
+                )
+
+                const response = await fetch("/api/qdrant/upsert", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ items: ingestItems }),
+                })
+
+                if (!response.ok) {
+                  const data = await response.json().catch(() => ({}))
+                  throw new Error(
+                    data.error ?? "Failed to upsert into Qdrant."
+                  )
+                }
+
+                const data = await response.json()
+                setIngestMessage(
+                  `Ingested ${data.upserted} items into collection "${data.collection}".`
+                )
+              } catch (ingestError) {
+                console.error("Failed to ingest into Qdrant", ingestError)
+                setIngestMessage(
+                  ingestError instanceof Error
+                    ? ingestError.message
+                    : "Failed to ingest into Qdrant."
+                )
+              } finally {
+                setIsIngesting(false)
+              }
+            }}
+          >
+            {isIngesting ? "Ingesting..." : "Ingest shown results"}
+          </Button>
+        ) : null}
+        <span className="text-xs text-muted-foreground">
+          {threads.length} threads queued • concurrency{" "}
+          {process.env.NEXT_PUBLIC_SYNC_CONCURRENCY ?? "5"}
+        </span>
+      </div>
+
+      {ingestMessage ? (
+        <p
+          className={`mt-3 text-sm ${
+            ingestMessage.toLowerCase().includes("failed") ||
+            ingestMessage.toLowerCase().includes("error")
+              ? "text-destructive"
+              : "text-emerald-600 dark:text-emerald-400"
+          }`}
+        >
+          {ingestMessage}
+        </p>
+      ) : null}
+
+      <div className="mt-8 space-y-3">
+        <p className="text-sm font-medium text-foreground">Thread progress</p>
+        <div className="rounded-lg border border-border">
+          <ul className="divide-y divide-border">
+            {statusOrder.map(({ thread, status }) => (
+              <li
+                key={thread.id}
+                className="flex flex-col gap-2 bg-background p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-foreground">
+                    {thread.subject}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {thread.from} {"->"} {thread.to}
+                  </p>
+                  {thread.createdAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Created {formatTimestamp(thread.createdAt)}
+                    </p>
+                  ) : null}
+                </div>
+                <ThreadStatusBadge status={status} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {error ? (
+        <p className="mt-4 text-sm text-destructive">{error}</p>
       ) : null}
     </div>
   )

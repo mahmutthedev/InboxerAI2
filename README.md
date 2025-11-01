@@ -20,7 +20,11 @@ InboxerAI connects to Gmail, analyzes every thread with LLMs, and stores structu
    GOOGLE_CLIENT_ID=your-google-client-id
    GOOGLE_CLIENT_SECRET=your-google-client-secret
    OPENAI_API_KEY=your-openai-api-key
+   OPENAI_RESPONSE_MODEL=gpt-4o-mini
+   OPENAI_EMBEDDING_MODEL=text-embedding-3-small
    NEXT_PUBLIC_SYNC_CONCURRENCY=5 # Optional: max concurrent LLM runs
+   INITIAL_INGEST_MAX_THREADS=200 # Server-side safety limit
+   NEXT_PUBLIC_INITIAL_INGEST_MAX_THREADS=200 # Display hint for the UI
    QDRANT_URL=http://localhost:6333
    QDRANT_API_KEY=your-qdrant-api-key # optional when running locally
    QDRANT_COLLECTION=inboxerai_threads
