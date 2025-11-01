@@ -1,4 +1,4 @@
-# InboxerAI
+﻿# InboxerAI
 
 InboxerAI connects to Gmail, analyzes every thread with LLMs, and stores structured question & answer pairs for downstream automations.
 
@@ -25,6 +25,7 @@ InboxerAI connects to Gmail, analyzes every thread with LLMs, and stores structu
    NEXT_PUBLIC_SYNC_CONCURRENCY=5 # Optional: max concurrent LLM runs
    INITIAL_INGEST_MAX_THREADS=200 # Server-side safety limit
    NEXT_PUBLIC_INITIAL_INGEST_MAX_THREADS=200 # Display hint for the UI
+   NEXT_PUBLIC_INITIAL_PREVIEW_CONCURRENCY=5 # Optional: preview extraction concurrency
    QDRANT_URL=http://localhost:6333
    QDRANT_API_KEY=your-qdrant-api-key # optional when running locally
    QDRANT_COLLECTION=inboxerai_threads

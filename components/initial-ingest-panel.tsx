@@ -14,6 +14,11 @@ const MAX_THREADS_HINT = Number(
   process.env.NEXT_PUBLIC_INITIAL_INGEST_MAX_THREADS ?? "200"
 )
 
+const PREVIEW_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.NEXT_PUBLIC_INITIAL_PREVIEW_CONCURRENCY ?? "5")
+)
+
 interface PreviewThread {
   threadId: string
   subject: string
@@ -42,6 +47,8 @@ export function InitialIngestPanel({
     "info"
   )
   const [preview, setPreview] = useState<PreviewResult | null>(null)
+  const [progressTotal, setProgressTotal] = useState(0)
+  const [progressCurrent, setProgressCurrent] = useState(0)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const refreshStats = useCallback(async (suppressLoading = false) => {
@@ -91,28 +98,130 @@ export function InitialIngestPanel({
   const handleGeneratePreview = async () => {
     setIsGenerating(true)
     setStatusVariant("info")
-    setStatusMessage("Preparing preview…")
+    setStatusMessage("Fetching thread list…")
     setPreview(null)
+    setProgressTotal(0)
+    setProgressCurrent(0)
 
     try {
-      const response = await fetch("/api/gmail/ingest/preview", {
+      const listResponse = await fetch("/api/gmail/threads/list", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
       })
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.error ?? "Failed to build preview.")
+      if (!listResponse.ok) {
+        const data = await listResponse.json().catch(() => ({}))
+        throw new Error(data.error ?? "Failed to list Gmail threads.")
       }
 
-      const data = (await response.json()) as PreviewResult
-      setPreview(data)
-      setStatusVariant("success")
-      setStatusMessage(
-        `Processed ${data.processedThreads.toLocaleString()} threads and extracted ${data.totalQuestions.toLocaleString()} questions.`
+      const listData = await listResponse.json()
+      const threadIds: string[] = listData.threadIds ?? []
+
+      if (!threadIds.length) {
+        setStatusVariant("info")
+        setStatusMessage("No Gmail threads available for ingest.")
+        return
+      }
+
+      setProgressTotal(threadIds.length)
+      setProgressCurrent(0)
+      setStatusMessage(`Processing threads 0/${threadIds.length}…`)
+
+      let processedThreadsLocal = 0
+      let threadsWithQuestionsLocal = 0
+      let totalQuestionsLocal = 0
+      let currentIndex = 0
+
+      const results: Array<{ order: number; data: PreviewThread }> = []
+
+      const worker = async () => {
+        while (true) {
+          const idx = currentIndex++
+          if (idx >= threadIds.length) break
+          const threadId = threadIds[idx]
+
+          try {
+            const response = await fetch(
+              `/api/gmail/thread/${encodeURIComponent(threadId)}/qa`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({}),
+              }
+            )
+
+            if (!response.ok) {
+              continue
+            }
+
+            const data = await response.json()
+            const questions = (data.questions ?? []).filter(
+              (qa: { question?: string; answer?: string }) =>
+                Boolean(qa?.question && qa?.answer)
+            )
+
+            if (!questions.length) {
+              continue
+            }
+
+            threadsWithQuestionsLocal += 1
+            totalQuestionsLocal += questions.length
+
+            results.push({
+              order: idx,
+              data: {
+                threadId,
+                subject: data.subject ?? "Untitled thread",
+                createdAt: data.createdAt ?? null,
+                messageCount: data.messageCount ?? questions.length,
+                questions,
+              },
+            })
+          } catch (error) {
+            console.error("Failed to preview thread", threadId, error)
+          } finally {
+            processedThreadsLocal += 1
+            setProgressCurrent((prev) => {
+              const next = prev + 1
+              setStatusMessage(`Processing threads ${next}/${threadIds.length}…`)
+              return next
+            })
+          }
+        }
+      }
+
+      const workers = Array.from(
+        { length: Math.min(PREVIEW_CONCURRENCY, threadIds.length) },
+        () => worker()
       )
+
+      await Promise.all(workers)
+
+      const sortedThreads = results
+        .sort((a, b) => a.order - b.order)
+        .map((entry) => entry.data)
+
+      setPreview({
+        processedThreads: processedThreadsLocal,
+        threadsWithQuestions: threadsWithQuestionsLocal,
+        totalQuestions: totalQuestionsLocal,
+        maxThreads: listData.maxThreads ?? threadIds.length,
+        threads: sortedThreads,
+      })
+
+      if (threadsWithQuestionsLocal === 0) {
+        setStatusVariant("info")
+        setStatusMessage("No questions detected in the scanned threads.")
+      } else {
+        setStatusVariant("success")
+        setStatusMessage(
+          `Processed ${processedThreadsLocal.toLocaleString()} threads and extracted ${totalQuestionsLocal.toLocaleString()} questions.`
+        )
+      }
     } catch (error) {
       console.error("Preview generation failed", error)
       setStatusVariant("error")
@@ -200,14 +309,16 @@ export function InitialIngestPanel({
     if (!preview) return
     setPreview({
       ...preview,
-      threads: preview.threads.map((thread) =>
-        thread.threadId === threadId
-          ? {
-              ...thread,
-              questions: thread.questions.filter((_, qaIndex) => qaIndex !== index),
-            }
-          : thread
-      ),
+      threads: preview.threads
+        .map((thread) =>
+          thread.threadId === threadId
+            ? {
+                ...thread,
+                questions: thread.questions.filter((_, qaIndex) => qaIndex !== index),
+              }
+            : thread
+        )
+        .filter((thread) => thread.questions.length > 0),
     })
   }
 
@@ -295,6 +406,11 @@ export function InitialIngestPanel({
           }`}
         >
           {statusMessage}
+        </p>
+      ) : null}
+      {isGenerating && progressTotal > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Preview progress: {Math.min(progressCurrent, progressTotal)} / {progressTotal}
         </p>
       ) : null}
 
