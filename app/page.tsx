@@ -1,6 +1,5 @@
 import { cookies } from "next/headers"
 
-import { siteConfig } from "@/config/site"
 import {
   GOOGLE_OAUTH_SESSION_COOKIE,
   decodeOAuthSessionCookie,
@@ -13,6 +12,14 @@ import { ConnectGoogleButton } from "@/components/connect-google-button"
 import { GmailThreadList } from "@/components/gmail-thread-list"
 import { InitialIngestPanel } from "@/components/initial-ingest-panel"
 import { SyncThreadsPanel } from "@/components/sync-threads-panel"
+
+const INITIAL_INGEST_MAX_THREADS = Number(
+  process.env.INITIAL_INGEST_MAX_THREADS ?? "200"
+)
+const NORMALIZED_INITIAL_INGEST_MAX_THREADS =
+  Number.isFinite(INITIAL_INGEST_MAX_THREADS) && INITIAL_INGEST_MAX_THREADS > 0
+    ? Math.floor(INITIAL_INGEST_MAX_THREADS)
+    : null
 
 interface IndexPageProps {
   searchParams?: Record<string, string | string[]>
@@ -48,7 +55,10 @@ export default async function IndexPage({ searchParams = {} }: IndexPageProps) {
     <main className="container flex flex-col gap-12 pb-12 pt-8">
       {profile ? (
         <section className="grid gap-6">
-          <InitialIngestPanel gmailThreadCount={gmail?.threadsTotal} />
+          <InitialIngestPanel
+            gmailThreadCount={gmail?.threadsTotal}
+            initialIngestMaxThreads={NORMALIZED_INITIAL_INGEST_MAX_THREADS}
+          />
         </section>
       ) : null}
     </main>

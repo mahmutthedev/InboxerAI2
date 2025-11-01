@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
       lastFullIngestAt,
       lastPreviewAt,
       rules,
+      previewMaxThreads,
     } = body as {
       processedThreadIds?: string[]
       historyId?: string
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
       lastFullIngestAt?: string
       lastPreviewAt?: string
       rules?: string | null
+      previewMaxThreads?: number | null
     }
 
     let state
@@ -54,6 +56,9 @@ export async function POST(request: NextRequest) {
       lastFullIngestAt,
       lastPreviewAt,
       ...(rules !== undefined ? { rules: rules ?? "" } : {}),
+      ...(previewMaxThreads !== undefined
+        ? { previewMaxThreads }
+        : {}),
     })
 
     return NextResponse.json({

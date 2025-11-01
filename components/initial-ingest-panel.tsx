@@ -3,15 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Loader2, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 
 interface InitialIngestPanelProps {
   gmailThreadCount?: number
+  initialIngestMaxThreads?: number | null
 }
-
-const MAX_THREADS_HINT = Number(
-  process.env.NEXT_PUBLIC_INITIAL_INGEST_MAX_THREADS ?? "200"
-)
 
 const PREVIEW_CONCURRENCY = Math.max(
   1,
@@ -42,11 +40,19 @@ interface IngestStateSummary {
   lastPreviewAt: string | null
   lastUpdatedAt: string | null
   rules: string
+  previewMaxThreads: number | null
 }
 
 export function InitialIngestPanel({
   gmailThreadCount,
+  initialIngestMaxThreads,
 }: InitialIngestPanelProps) {
+  const initialPreviewLimit =
+    typeof initialIngestMaxThreads === "number" &&
+    Number.isFinite(initialIngestMaxThreads) &&
+    initialIngestMaxThreads > 0
+      ? Math.floor(initialIngestMaxThreads)
+      : null
   const [pointCount, setPointCount] = useState<number | null>(null)
   const [isFetchingStats, setIsFetchingStats] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -61,6 +67,14 @@ export function InitialIngestPanel({
   const [rulesDraft, setRulesDraft] = useState("")
   const [isRulesEditing, setIsRulesEditing] = useState(false)
   const [isSavingRules, setIsSavingRules] = useState(false)
+  const [previewLimitValue, setPreviewLimitValue] = useState<number | null>(
+    initialPreviewLimit
+  )
+  const [previewLimitDraft, setPreviewLimitDraft] = useState(
+    initialPreviewLimit ? String(initialPreviewLimit) : ""
+  )
+  const [isPreviewLimitEditing, setIsPreviewLimitEditing] = useState(false)
+  const [isSavingPreviewLimit, setIsSavingPreviewLimit] = useState(false)
   const [progressTotal, setProgressTotal] = useState(0)
   const [progressCurrent, setProgressCurrent] = useState(0)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -108,6 +122,7 @@ export function InitialIngestPanel({
       lastFullIngestAt?: string | null
       lastPreviewAt?: string | null
       rules?: string | null
+      previewMaxThreads?: number | null
     }): Promise<IngestStateSummary | null> => {
       try {
         const response = await fetch("/api/ingest/state", {
@@ -162,14 +177,35 @@ export function InitialIngestPanel({
     if (rulesValue !== currentRules) {
       setRulesValue(currentRules)
     }
-    if (!isRulesEditing && rulesDraft !== currentRules) {
-      setRulesDraft(currentRules)
+  if (!isRulesEditing && rulesDraft !== currentRules) {
+    setRulesDraft(currentRules)
+  }
+}, [
+  ingestState?.rules,
+  isRulesEditing,
+  rulesDraft,
+  rulesValue,
+])
+
+  useEffect(() => {
+    const savedLimit =
+      typeof ingestState?.previewMaxThreads === "number"
+        ? ingestState.previewMaxThreads
+        : null
+    const resolvedLimit = savedLimit ?? initialPreviewLimit ?? null
+
+    if (previewLimitValue !== resolvedLimit) {
+      setPreviewLimitValue(resolvedLimit)
+    }
+
+    if (!isPreviewLimitEditing) {
+      setPreviewLimitDraft(resolvedLimit ? String(resolvedLimit) : "")
     }
   }, [
-    ingestState?.rules,
-    isRulesEditing,
-    rulesDraft,
-    rulesValue,
+    ingestState?.previewMaxThreads,
+    initialPreviewLimit,
+    isPreviewLimitEditing,
+    previewLimitValue,
   ])
 
   const stopPolling = () => {
@@ -211,6 +247,59 @@ export function InitialIngestPanel({
     }
   }
 
+  const handleStartEditingPreviewLimit = () => {
+    setIsPreviewLimitEditing(true)
+    const current =
+      typeof previewLimitValue === "number" && previewLimitValue > 0
+        ? previewLimitValue
+        : initialPreviewLimit
+    setPreviewLimitDraft(current ? String(current) : "")
+  }
+
+  const handleCancelPreviewLimit = () => {
+    setIsPreviewLimitEditing(false)
+    const current =
+      typeof previewLimitValue === "number" && previewLimitValue > 0
+        ? previewLimitValue
+        : initialPreviewLimit
+    setPreviewLimitDraft(current ? String(current) : "")
+  }
+
+  const handleSavePreviewLimit = async () => {
+    const trimmed = previewLimitDraft.trim()
+    const parsed = Number.parseInt(trimmed, 10)
+
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setStatusVariant("error")
+      setStatusMessage("Preview limit must be a positive integer.")
+      return
+    }
+
+    setIsSavingPreviewLimit(true)
+    try {
+      const summary = await syncIngestState({ previewMaxThreads: parsed })
+      const updatedLimit =
+        typeof summary?.previewMaxThreads === "number"
+          ? summary.previewMaxThreads
+          : parsed
+      setPreviewLimitValue(updatedLimit)
+      setPreviewLimitDraft(String(updatedLimit))
+      setIsPreviewLimitEditing(false)
+      setStatusVariant("success")
+      setStatusMessage(
+        `Preview limit saved (${updatedLimit.toLocaleString()} threads).`
+      )
+    } catch (error) {
+      console.error("Failed to save preview limit", error)
+      setStatusVariant("error")
+      setStatusMessage(
+        error instanceof Error ? error.message : "Failed to save preview limit."
+      )
+    } finally {
+      setIsSavingPreviewLimit(false)
+    }
+  }
+
   const selectedThreads = useMemo(() => {
     if (!preview) return 0
     return preview.threads.filter((thread) => thread.questions.length > 0).length
@@ -229,6 +318,14 @@ export function InitialIngestPanel({
     setProgressTotal(0)
     setProgressCurrent(0)
     const instructionsForPreview = rulesValue.trim()
+    const limitForPreview =
+      typeof previewLimitValue === "number" && previewLimitValue > 0
+        ? previewLimitValue
+        : initialPreviewLimit
+    const listRequestPayload =
+      limitForPreview && Number.isFinite(limitForPreview)
+        ? { maxThreads: limitForPreview }
+        : {}
 
     try {
       const listResponse = await fetch("/api/gmail/threads/list", {
@@ -236,6 +333,7 @@ export function InitialIngestPanel({
         headers: {
           "Content-Type": "application/json",
         },
+        body: JSON.stringify(listRequestPayload),
       })
 
       if (!listResponse.ok) {
@@ -500,6 +598,10 @@ export function InitialIngestPanel({
   const coveragePercentage = totalThreadsDetected
     ? Math.min((processedThreadsCount / totalThreadsDetected) * 100, 100)
     : null
+  const effectivePreviewLimit =
+    typeof previewLimitValue === "number" && previewLimitValue > 0
+      ? previewLimitValue
+      : initialPreviewLimit
 
   return (
     <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
@@ -521,6 +623,66 @@ export function InitialIngestPanel({
         >
           {hasExistingData ? "Ingested" : "Not indexed"}
         </span>
+      </div>
+
+      <div className="mt-4">
+        <label
+          htmlFor="initial-ingest-thread-limit"
+          className="text-sm font-medium text-foreground"
+        >
+          Preview thread limit
+        </label>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Control how many threads are fetched during preview generation.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <Input
+            id="initial-ingest-thread-limit"
+            type="number"
+            min={1}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={isPreviewLimitEditing ? previewLimitDraft : effectivePreviewLimit ? String(effectivePreviewLimit) : ""}
+            onChange={(event) => setPreviewLimitDraft(event.target.value)}
+            disabled={!isPreviewLimitEditing || isSavingPreviewLimit}
+            placeholder="200"
+            className="w-32"
+          />
+          {isPreviewLimitEditing ? (
+            <>
+              <Button
+                size="sm"
+                onClick={handleSavePreviewLimit}
+                disabled={isSavingPreviewLimit}
+              >
+                {isSavingPreviewLimit ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    Saving
+                  </span>
+                ) : (
+                  "Save limit"
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleCancelPreviewLimit}
+                disabled={isSavingPreviewLimit}
+              >
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleStartEditingPreviewLimit}
+            >
+              Edit limit
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="mt-4">
@@ -613,12 +775,12 @@ export function InitialIngestPanel({
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-xs text-muted-foreground">
-          {MAX_THREADS_HINT
-            ? `Preview scans up to ${MAX_THREADS_HINT.toLocaleString()} threads.`
+          {effectivePreviewLimit
+            ? `Preview scans up to ${effectivePreviewLimit.toLocaleString()} threads.`
             : "Preview scans your entire inbox."}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleGeneratePreview} disabled={isGenerating || isIngesting || isRulesEditing || isSavingRules}>
+          <Button onClick={handleGeneratePreview} disabled={isGenerating || isIngesting || isRulesEditing || isSavingRules || isPreviewLimitEditing || isSavingPreviewLimit}>
             {isGenerating ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="size-4 animate-spin" />
@@ -631,7 +793,7 @@ export function InitialIngestPanel({
           <Button
             variant="secondary"
             onClick={handleIngestSelected}
-            disabled={isGenerating || isIngesting || selectedQuestions === 0 || isRulesEditing || isSavingRules}
+            disabled={isGenerating || isIngesting || selectedQuestions === 0 || isRulesEditing || isSavingRules || isPreviewLimitEditing || isSavingPreviewLimit}
           >
             {isIngesting ? (
               <span className="inline-flex items-center gap-2">

@@ -1,14 +1,9 @@
 {
-  "processedThreadIds": [
-    "19a3bc668c71f0bc",
-    "19a3a0e36a5dff0b",
-    "19a3c20d3701a820",
-    "19a39f74747d6774",
-    "19a385e8c4db1b23"
-  ],
+  "processedThreadIds": [],
   "totalThreadsDetected": 1367,
-  "lastFullIngestAt": "2025-11-01T05:55:14.664Z",
-  "lastPreviewAt": "2025-11-01T07:24:25.912Z",
-  "lastUpdatedAt": "2025-11-01T07:26:01.421Z",
-  "rules": ""
+  "lastFullIngestAt": "",
+  "lastPreviewAt": "2025-11-01T08:10:04.411Z",
+  "lastUpdatedAt": "2025-11-01T08:10:04.429Z",
+  "rules": "",
+  "previewMaxThreads": 100
 }

@@ -9,6 +9,7 @@ export interface GmailIngestState {
   lastPreviewAt?: string
   lastUpdatedAt?: string
   rules?: string
+  previewMaxThreads?: number | null
 }
 
 const STATE_DIR = path.join(process.cwd(), "data")
@@ -17,6 +18,7 @@ const STATE_PATH = path.join(STATE_DIR, "ingest-state.json")
 const defaultState: GmailIngestState = {
   processedThreadIds: [],
   rules: "",
+  previewMaxThreads: null,
 }
 
 async function ensureStateDir() {
@@ -76,6 +78,10 @@ export function summarizeState(state: GmailIngestState) {
     lastPreviewAt: state.lastPreviewAt ?? null,
     lastUpdatedAt: state.lastUpdatedAt ?? null,
     rules: state.rules ?? "",
+    previewMaxThreads:
+      typeof state.previewMaxThreads === "number"
+        ? state.previewMaxThreads
+        : null,
   }
 }
 
@@ -95,6 +101,7 @@ function normalizeState(
       typeof partial.rules === "string"
         ? partial.rules
         : "",
+    previewMaxThreads: normalizePositiveInteger(partial.previewMaxThreads),
   }
 }
 
@@ -134,5 +141,25 @@ function mergeState(
     merged.rules = update.rules ?? ""
   }
 
+  if (update.previewMaxThreads !== undefined) {
+    merged.previewMaxThreads =
+      update.previewMaxThreads === null
+        ? null
+        : normalizePositiveInteger(update.previewMaxThreads)
+  }
+
   return merged
+}
+
+function normalizePositiveInteger(
+  value: number | null | undefined
+): number | null {
+  if (typeof value !== "number") {
+    return null
+  }
+  const normalized = Math.floor(value)
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    return null
+  }
+  return normalized
 }

@@ -38,9 +38,22 @@ export async function POST(request: NextRequest) {
     // optional body
   }
 
-  const maxThreads =
-    body.maxThreads ??
-    Number(process.env.INITIAL_INGEST_MAX_THREADS ?? "200")
+  const envMaxThreadsRaw = Number(
+    process.env.INITIAL_INGEST_MAX_THREADS ?? "200"
+  )
+  const requestedMaxThreads =
+    typeof body.maxThreads === "number" ? body.maxThreads : undefined
+
+  const resolvedMaxThreads =
+    typeof requestedMaxThreads === "number" &&
+    Number.isFinite(requestedMaxThreads) &&
+    requestedMaxThreads > 0
+      ? requestedMaxThreads
+      : Number.isFinite(envMaxThreadsRaw) && envMaxThreadsRaw > 0
+      ? envMaxThreadsRaw
+      : 200
+
+  const maxThreads = Math.max(1, Math.floor(resolvedMaxThreads))
 
   try {
     const state = await readIngestState()
