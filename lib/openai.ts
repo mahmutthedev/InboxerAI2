@@ -100,7 +100,7 @@ function buildPromptForThread(
     : ""
 
   const prompt = `
-You are an email analysis assistant. Given the messages of a Gmail thread, extract any explicit questions that were asked and provide the best available answers from the thread context. If a question is unanswered, use "Unknown" as the answer. If there are no questions, return an empty array.
+You are an email analysis assistant. Given the messages of a Gmail thread, extract any explicit questions that were asked and provide the best available answers from the thread context. If a question is unanswered, ignore it and don't include as part of the list. If there are no questions, return an empty array.
 
 ${instructionBlock}
 

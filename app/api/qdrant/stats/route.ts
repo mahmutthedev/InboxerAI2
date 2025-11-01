@@ -1,34 +1,42 @@
-import { NextResponse } from "next/server"
+﻿import { NextResponse } from "next/server"
 
-import {
-  assertCollectionName,
-  getQdrantClient,
-} from "@/lib/qdrant"
+import { assertCollectionName } from "@/lib/qdrant"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   try {
-    const client = getQdrantClient()
     const collection = assertCollectionName()
+    const baseUrl = process.env.QDRANT_URL
+    if (!baseUrl) {
+      throw new Error("QDRANT_URL is not configured")
+    }
 
-    const response = await client.count(collection, { exact: true })
-    const count = response.result?.count ?? 0
+    const url = new URL(`/collections/${encodeURIComponent(collection)}/points/count`, baseUrl)
+
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(process.env.QDRANT_API_KEY
+          ? { Authorization: `Bearer ${process.env.QDRANT_API_KEY}` }
+          : {}),
+      },
+      body: JSON.stringify({}),
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`Qdrant count failed: ${response.status} ${text}`)
+    }
+
+    const data = await response.json()
+    const count = data?.result?.count ?? 0
 
     return NextResponse.json({ collection, count })
   } catch (error: any) {
-    const statusCode =
-      error?.response?.status ?? error?.status ?? error?.code ?? null
-    const message = error?.response?.data?.status?.error ?? error?.message
-
-    if (statusCode === 404 || String(message || "").includes("Not found")) {
-      return NextResponse.json({ collection: null, count: 0 })
-    }
-
+    const message = error?.message ?? "Unable to retrieve Qdrant statistics."
     console.error("Failed to fetch Qdrant stats", error)
-    return NextResponse.json(
-      { error: "Unable to retrieve Qdrant statistics." },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

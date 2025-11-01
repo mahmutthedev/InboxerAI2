@@ -1,10 +1,9 @@
 ﻿"use client"
-/* eslint-disable tailwindcss/classnames-order */
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Loader2, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 
 interface InitialIngestPanelProps {
   gmailThreadCount?: number
@@ -35,6 +34,16 @@ interface PreviewResult {
   threads: PreviewThread[]
 }
 
+interface IngestStateSummary {
+  processedThreads: number
+  historyId: string | null
+  totalThreadsDetected: number | null
+  lastFullIngestAt: string | null
+  lastPreviewAt: string | null
+  lastUpdatedAt: string | null
+  rules: string
+}
+
 export function InitialIngestPanel({
   gmailThreadCount,
 }: InitialIngestPanelProps) {
@@ -47,10 +56,16 @@ export function InitialIngestPanel({
     "info"
   )
   const [preview, setPreview] = useState<PreviewResult | null>(null)
+  const [ingestState, setIngestState] = useState<IngestStateSummary | null>(null)
+  const [rulesValue, setRulesValue] = useState("")
+  const [rulesDraft, setRulesDraft] = useState("")
+  const [isRulesEditing, setIsRulesEditing] = useState(false)
+  const [isSavingRules, setIsSavingRules] = useState(false)
   const [progressTotal, setProgressTotal] = useState(0)
   const [progressCurrent, setProgressCurrent] = useState(0)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  const latestPreviewThreadIdsRef = useRef<string[]>([])
   const refreshStats = useCallback(async (suppressLoading = false) => {
     if (!suppressLoading) {
       setIsFetchingStats(true)
@@ -72,16 +87,127 @@ export function InitialIngestPanel({
     }
   }, [])
 
+  const loadIngestState = useCallback(async () => {
+    try {
+      const response = await fetch("/api/ingest/state")
+      if (!response.ok) {
+        throw new Error("Failed to load ingest state")
+      }
+      const data = await response.json()
+      setIngestState(data)
+    } catch (error) {
+      console.error("Unable to load ingest state", error)
+    }
+  }, [])
+
+  const syncIngestState = useCallback(
+    async (payload: {
+      processedThreadIds?: string[]
+      historyId?: string | null
+      totalThreadsDetected?: number | null
+      lastFullIngestAt?: string | null
+      lastPreviewAt?: string | null
+      rules?: string | null
+    }): Promise<IngestStateSummary | null> => {
+      try {
+        const response = await fetch("/api/ingest/state", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload ?? {}),
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to update ingest state")
+        }
+
+        const data = await response.json()
+        if (data?.state) {
+          const summary = data.state as IngestStateSummary
+          setIngestState(summary)
+          return summary
+        }
+        return null
+      } catch (error) {
+        console.error("Unable to update ingest state", error)
+        throw error
+      }
+    },
+    []
+  )
+
   useEffect(() => {
     refreshStats().catch(() => {
       /* ignored */
     })
-  }, [refreshStats])
+    loadIngestState().catch(() => {
+      /* ignored */
+    })
+  }, [refreshStats, loadIngestState])
+
+  useEffect(() => {
+    if (
+      gmailThreadCount &&
+      ingestState?.totalThreadsDetected !== gmailThreadCount
+    ) {
+      syncIngestState({ totalThreadsDetected: gmailThreadCount }).catch(() => {
+        /* ignored */
+      })
+    }
+  }, [gmailThreadCount, ingestState?.totalThreadsDetected, syncIngestState])
+
+  useEffect(() => {
+    const currentRules = ingestState?.rules ?? ""
+    if (rulesValue !== currentRules) {
+      setRulesValue(currentRules)
+    }
+    if (!isRulesEditing && rulesDraft !== currentRules) {
+      setRulesDraft(currentRules)
+    }
+  }, [
+    ingestState?.rules,
+    isRulesEditing,
+    rulesDraft,
+    rulesValue,
+  ])
 
   const stopPolling = () => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current)
       pollingRef.current = null
+    }
+  }
+
+  const handleStartEditingRules = () => {
+    setIsRulesEditing(true)
+    setRulesDraft(rulesValue)
+  }
+
+  const handleCancelRules = () => {
+    setIsRulesEditing(false)
+    setRulesDraft(rulesValue)
+  }
+
+  const handleSaveRules = async () => {
+    const trimmed = rulesDraft.trim()
+    setIsSavingRules(true)
+    try {
+      const summary = await syncIngestState({ rules: trimmed })
+      const updatedRules = summary?.rules ?? trimmed
+      setRulesValue(updatedRules)
+      setRulesDraft(updatedRules)
+      setStatusVariant("success")
+      setStatusMessage("Rules saved.")
+      setIsRulesEditing(false)
+    } catch (error) {
+      console.error("Failed to save rules", error)
+      setStatusVariant("error")
+      setStatusMessage(
+        error instanceof Error ? error.message : "Failed to save rules."
+      )
+    } finally {
+      setIsSavingRules(false)
     }
   }
 
@@ -102,6 +228,7 @@ export function InitialIngestPanel({
     setPreview(null)
     setProgressTotal(0)
     setProgressCurrent(0)
+    const instructionsForPreview = rulesValue.trim()
 
     try {
       const listResponse = await fetch("/api/gmail/threads/list", {
@@ -118,10 +245,15 @@ export function InitialIngestPanel({
 
       const listData = await listResponse.json()
       const threadIds: string[] = listData.threadIds ?? []
+      latestPreviewThreadIdsRef.current = threadIds
 
       if (!threadIds.length) {
         setStatusVariant("info")
-        setStatusMessage("No Gmail threads available for ingest.")
+        setStatusMessage("No Gmail threads remaining to ingest.")
+        await syncIngestState({
+          lastPreviewAt: new Date().toISOString(),
+          totalThreadsDetected: gmailThreadCount ?? null,
+        })
         return
       }
 
@@ -129,17 +261,19 @@ export function InitialIngestPanel({
       setProgressCurrent(0)
       setStatusMessage(`Processing threads 0/${threadIds.length}…`)
 
+      const results: Array<{ order: number; thread: PreviewThread }> = []
       let processedThreadsLocal = 0
       let threadsWithQuestionsLocal = 0
       let totalQuestionsLocal = 0
+      const processedThreadIdsLocal: string[] = []
       let currentIndex = 0
-
-      const results: Array<{ order: number; data: PreviewThread }> = []
 
       const worker = async () => {
         while (true) {
           const idx = currentIndex++
-          if (idx >= threadIds.length) break
+          if (idx >= threadIds.length) {
+            break
+          }
           const threadId = threadIds[idx]
 
           try {
@@ -150,7 +284,11 @@ export function InitialIngestPanel({
                 headers: {
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify(
+                  instructionsForPreview
+                    ? { instructions: instructionsForPreview }
+                    : {}
+                ),
               }
             )
 
@@ -158,8 +296,8 @@ export function InitialIngestPanel({
               continue
             }
 
-            const data = await response.json()
-            const questions = (data.questions ?? []).filter(
+            const threadData = await response.json()
+            const questions = (threadData.questions ?? []).filter(
               (qa: { question?: string; answer?: string }) =>
                 Boolean(qa?.question && qa?.answer)
             )
@@ -173,11 +311,11 @@ export function InitialIngestPanel({
 
             results.push({
               order: idx,
-              data: {
+              thread: {
                 threadId,
-                subject: data.subject ?? "Untitled thread",
-                createdAt: data.createdAt ?? null,
-                messageCount: data.messageCount ?? questions.length,
+                subject: threadData.subject ?? "Untitled thread",
+                createdAt: threadData.createdAt ?? null,
+                messageCount: threadData.messageCount ?? questions.length,
                 questions,
               },
             })
@@ -185,6 +323,7 @@ export function InitialIngestPanel({
             console.error("Failed to preview thread", threadId, error)
           } finally {
             processedThreadsLocal += 1
+            processedThreadIdsLocal.push(threadId)
             setProgressCurrent((prev) => {
               const next = prev + 1
               setStatusMessage(`Processing threads ${next}/${threadIds.length}…`)
@@ -201,16 +340,26 @@ export function InitialIngestPanel({
 
       await Promise.all(workers)
 
+      const processedThreadIds = Array.from(new Set(processedThreadIdsLocal))
+      latestPreviewThreadIdsRef.current = processedThreadIds
+
       const sortedThreads = results
         .sort((a, b) => a.order - b.order)
-        .map((entry) => entry.data)
+        .map((entry) => entry.thread)
 
-      setPreview({
+      const summary: PreviewResult = {
         processedThreads: processedThreadsLocal,
         threadsWithQuestions: threadsWithQuestionsLocal,
         totalQuestions: totalQuestionsLocal,
         maxThreads: listData.maxThreads ?? threadIds.length,
         threads: sortedThreads,
+      }
+
+      setPreview(summary)
+
+      await syncIngestState({
+        lastPreviewAt: new Date().toISOString(),
+        totalThreadsDetected: gmailThreadCount ?? null,
       })
 
       if (threadsWithQuestionsLocal === 0) {
@@ -235,6 +384,8 @@ export function InitialIngestPanel({
 
   const handleIngestSelected = async () => {
     if (!preview) {
+      setStatusVariant("error")
+      setStatusMessage("Generate a preview before ingesting.")
       return
     }
 
@@ -252,6 +403,17 @@ export function InitialIngestPanel({
       setStatusMessage("Select at least one question before ingesting.")
       return
     }
+
+    const uniqueThreadIds = Array.from(
+      new Set(preview.threads.map((thread) => thread.threadId))
+    )
+    const processedThreadIds = Array.from(
+      new Set(
+        latestPreviewThreadIdsRef.current.length
+          ? latestPreviewThreadIdsRef.current
+          : uniqueThreadIds
+      )
+    )
 
     setIsIngesting(true)
     setStatusVariant("info")
@@ -285,6 +447,14 @@ export function InitialIngestPanel({
         `Ingested ${data.upserted} question & answer pairs into collection "${data.collection}".`
       )
       await refreshStats()
+      await syncIngestState({
+        processedThreadIds,
+        lastFullIngestAt: new Date().toISOString(),
+        totalThreadsDetected: gmailThreadCount ?? null,
+      })
+      setPreview(null)
+      setProgressCurrent(0)
+      setProgressTotal(0)
     } catch (error) {
       console.error("Failed to ingest into Qdrant", error)
       setStatusVariant("error")
@@ -324,6 +494,13 @@ export function InitialIngestPanel({
 
   const hasExistingData = !!pointCount && pointCount > 0
 
+  const processedThreadsCount = ingestState?.processedThreads ?? 0
+  const totalThreadsDetected =
+    gmailThreadCount ?? ingestState?.totalThreadsDetected ?? null
+  const coveragePercentage = totalThreadsDetected
+    ? Math.min((processedThreadsCount / totalThreadsDetected) * 100, 100)
+    : null
+
   return (
     <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
       <div className="flex items-start justify-between gap-4">
@@ -346,7 +523,63 @@ export function InitialIngestPanel({
         </span>
       </div>
 
-      <dl className="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+      <div className="mt-4">
+        <label
+          htmlFor="initial-ingest-rules"
+          className="text-sm font-medium text-foreground"
+        >
+          Rules
+        </label>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Provide optional instructions to guide extraction. Saved rules are appended to the LLM prompt.
+        </p>
+        <Textarea
+          id="initial-ingest-rules"
+          value={isRulesEditing ? rulesDraft : rulesValue}
+          onChange={(event) => setRulesDraft(event.target.value)}
+          disabled={!isRulesEditing || isSavingRules}
+          placeholder="Add high-level directives for the extractor..."
+          className="mt-2 h-28 resize-y"
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {isRulesEditing ? (
+            <>
+              <Button
+                size="sm"
+                onClick={handleSaveRules}
+                disabled={isSavingRules}
+              >
+                {isSavingRules ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    Saving
+                  </span>
+                ) : (
+                  "Save rules"
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleCancelRules}
+                disabled={isSavingRules}
+              >
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleStartEditingRules}
+            >
+              Edit rules
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <dl className="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
         <div className="rounded-lg border border-border bg-background/60 p-4">
           <dt className="text-muted-foreground">Gmail threads detected</dt>
           <dd className="mt-1 text-base font-semibold text-foreground">
@@ -359,7 +592,24 @@ export function InitialIngestPanel({
             {isFetchingStats && pointCount === null ? "…" : pointCount ?? "—"}
           </dd>
         </div>
+        <div className="rounded-lg border border-border bg-background/60 p-4">
+          <dt className="text-muted-foreground">Processed threads</dt>
+          <dd className="mt-1 text-base font-semibold text-foreground">
+            {processedThreadsCount.toLocaleString()}
+          </dd>
+        </div>
       </dl>
+
+      {totalThreadsDetected ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Coverage: {processedThreadsCount.toLocaleString()} /
+          {" "}
+          {totalThreadsDetected.toLocaleString()} threads
+          {coveragePercentage !== null
+            ? ` (${coveragePercentage.toFixed(1)}%)`
+            : null}
+        </p>
+      ) : null}
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-xs text-muted-foreground">
@@ -368,7 +618,7 @@ export function InitialIngestPanel({
             : "Preview scans your entire inbox."}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleGeneratePreview} disabled={isGenerating || isIngesting}>
+          <Button onClick={handleGeneratePreview} disabled={isGenerating || isIngesting || isRulesEditing || isSavingRules}>
             {isGenerating ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="size-4 animate-spin" />
@@ -381,7 +631,7 @@ export function InitialIngestPanel({
           <Button
             variant="secondary"
             onClick={handleIngestSelected}
-            disabled={isGenerating || isIngesting || selectedQuestions === 0}
+            disabled={isGenerating || isIngesting || selectedQuestions === 0 || isRulesEditing || isSavingRules}
           >
             {isIngesting ? (
               <span className="inline-flex items-center gap-2">
@@ -408,9 +658,12 @@ export function InitialIngestPanel({
           {statusMessage}
         </p>
       ) : null}
+
       {isGenerating && progressTotal > 0 ? (
         <p className="text-xs text-muted-foreground">
-          Preview progress: {Math.min(progressCurrent, progressTotal)} / {progressTotal}
+          Preview progress: {Math.min(progressCurrent, progressTotal)} /
+          {" "}
+          {progressTotal}
         </p>
       ) : null}
 
@@ -425,7 +678,7 @@ export function InitialIngestPanel({
             </span>
           </div>
           <div
-            className="overflow-y-auto space-y-4 rounded-lg border border-border bg-background/60 p-4"
+            className="space-y-4 overflow-y-auto rounded-lg border border-border bg-background/60 p-4"
             style={{ maxHeight: "28rem" }}
           >
             {preview.threads.length ? (
