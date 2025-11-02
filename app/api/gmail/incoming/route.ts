@@ -15,6 +15,9 @@ interface IncomingRequestBody {
 }
 
 export async function POST(request: NextRequest) {
+
+  debugger;
+  console.log(request)
   const sessionCookie = request.cookies.get(GOOGLE_OAUTH_SESSION_COOKIE)
   if (!sessionCookie?.value) {
     return NextResponse.json(
