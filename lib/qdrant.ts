@@ -54,7 +54,7 @@ export async function ensureQdrantCollection(
   vectorSize: number
 ) {
   try {
-    const existing = await client.getCollection(collection)
+    const existing: any = await client.getCollection(collection)
     const existingSize =
       existing.result?.config?.params?.vectors?.size ??
       existing.result?.status?.vectors_count
@@ -106,10 +106,10 @@ export async function fetchThreadQAPayloads(
 
   const results: ThreadQAPayload[] = []
 
-  let pagination: unknown = undefined
+  let pagination: string | number | null | undefined = undefined
 
   while (true) {
-    const response = await client.scroll(collection, {
+    const response: any = await client.scroll(collection, {
       limit: 64,
       offset: pagination ?? undefined,
       with_payload: true,
@@ -142,14 +142,14 @@ export async function fetchThreadQAPayloads(
       }
     }
 
-    const next =
+    const next: any =
       "next_page_offset" in response ? response.next_page_offset : undefined
 
     if (!next) {
       break
     }
 
-    pagination = next
+    pagination = Array.isArray(next) ? next.join(",") : (next as any)
   }
 
   return results
@@ -187,3 +187,6 @@ export function parseThreadQAPayload(
       typeof payload.ingestedAt === "string" ? payload.ingestedAt : null,
   }
 }
+
+
+

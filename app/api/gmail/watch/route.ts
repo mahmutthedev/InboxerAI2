@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import {
-  createGmailClient,
-  registerGmailWatch,
-} from "@/lib/google-auth"
+import { registerGmailWatch } from "@/lib/google-auth"
 import {
   getStoredGoogleAccount,
   listStoredGoogleAccounts,
@@ -63,13 +60,9 @@ export async function POST(request: NextRequest) {
       labelFilterAction: body.labelFilterAction ?? "include",
     })
 
-    // Persist tokens in case the client refreshed them during the request.
-    const gmailClient = createGmailClient(account.tokens)
-    const updatedTokens = gmailClient?.context?.auth?.credentials ?? account.tokens
-
     await upsertStoredGoogleAccount({
       email: account.email,
-      tokens: updatedTokens,
+      tokens: account.tokens,
       profile: account.profile,
       gmail: account.gmail,
     })
@@ -84,7 +77,7 @@ export async function POST(request: NextRequest) {
       topicName,
       historyId: watchResponse?.historyId ?? null,
       expiration: watchResponse?.expiration ?? null,
-      labelIds: watchResponse?.labelIds ?? body.labelIds ?? null,
+      labelIds: body.labelIds ?? null,
     })
   } catch (error) {
     console.error("Failed to register Gmail watch", error)
@@ -97,3 +90,4 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+

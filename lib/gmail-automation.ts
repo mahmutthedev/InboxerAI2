@@ -57,7 +57,7 @@ export async function processGmailHistoryNotification(
 
   const threadCache = new Map<string, Awaited<ReturnType<typeof fetchGmailThreadDetail>>>()
 
-  for (const [messageId, threadId] of uniqueByMessage.entries()) {
+  for (const [messageId, threadId] of Array.from(uniqueByMessage.entries())) {
     try {
       const messageResult = await fetchGmailMessageDetail(
         account.tokens,
