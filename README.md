@@ -29,6 +29,7 @@ InboxerAI connects to Gmail, analyzes every thread with LLMs, and stores structu
    QDRANT_URL=http://localhost:6333
    QDRANT_API_KEY=your-qdrant-api-key # optional when running locally
    QDRANT_COLLECTION=inboxerai_threads
+   GOOGLE_PUBSUB_VERIFICATION_TOKEN=choose-a-shared-secret
    ```
 
 3. Run the development server:
@@ -43,12 +44,34 @@ InboxerAI connects to Gmail, analyzes every thread with LLMs, and stores structu
 
 1. Create a project in the [Google Cloud console](https://console.cloud.google.com/).
 2. Enable the **Gmail API** for the project.
-3. Configure an OAuth consent screen (include the `gmail.readonly` scope).
+3. Configure an OAuth consent screen (include the `gmail.modify`, `gmail.compose`, and `userinfo.email` scopes).
 4. Create OAuth 2.0 credentials with an authorized redirect URI of:
    - `http://localhost:3000/api/auth/google/callback` for local development.
 5. Copy the Client ID and Client Secret into `.env.local`.
 
 The prototype stores tokens in an HTTP-only cookie for convenience. Replace this with secure, server-side storage before shipping to production.
+
+## Docker
+
+The repository ships with a `Dockerfile` and `docker-compose.yml` for local orchestration alongside Qdrant:
+
+```bash
+docker compose up --build
+```
+
+Environment variables from `.env` are injected into the container. The app listens on `http://localhost:3000`, and Qdrant is exposed on `http://localhost:6333`.
+
+When running in Docker, `data/` is mounted so ingest state persists between restarts and the `qdrant_state/` directory is used for vector storage.
+
+## Google webhook endpoint
+
+To connect a Gmail watch subscription:
+
+1. Deploy the app to a public HTTPS domain.
+2. Configure a Pub/Sub push subscription that points to `https://your-domain/api/gmail/webhook?token=SHARED_SECRET`.
+3. Set `GOOGLE_PUBSUB_VERIFICATION_TOKEN=SHARED_SECRET` in your environment to ensure only Google calls are accepted.
+
+The webhook currently acknowledges notifications and logs the `historyId`. To automate processing you will need to store long-lived Gmail credentials for each connected inbox and call the history API to collect new messages before invoking `/api/gmail/incoming`.
 
 ## Tech stack
 

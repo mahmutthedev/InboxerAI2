@@ -8,6 +8,7 @@ import {
   fetchGmailAccountProfile,
   fetchGoogleProfile,
 } from "@/lib/google-auth"
+import { upsertStoredGoogleAccount } from "@/lib/account-store"
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code")
@@ -28,6 +29,13 @@ export async function GET(request: NextRequest) {
     const tokens = await exchangeGoogleCodeForTokens({ code, redirectUri: callbackUrl })
     const profile = await fetchGoogleProfile(tokens)
     const gmail = await fetchGmailAccountProfile(tokens)
+
+    await upsertStoredGoogleAccount({
+      email: profile.email,
+      tokens,
+      profile,
+      gmail,
+    })
 
     const response = NextResponse.redirect(
       buildRedirectUrl(request, { google: "connected" })

@@ -5,7 +5,8 @@ import type { gmail_v1 } from "googleapis"
 import type { Credentials, OAuth2Client } from "google-auth-library"
 
 export const GOOGLE_OAUTH_SCOPES = [
-  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/gmail.compose",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
   "openid",
@@ -75,6 +76,12 @@ function createOAuthClient(redirectUri?: string): OAuth2Client {
   const clientId = assertGoogleEnv("GOOGLE_CLIENT_ID")
   const clientSecret = assertGoogleEnv("GOOGLE_CLIENT_SECRET")
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri)
+}
+
+function createGmailClient(tokens: Credentials) {
+  const oauthClient = createOAuthClient()
+  oauthClient.setCredentials(tokens)
+  return google.gmail({ version: "v1", auth: oauthClient })
 }
 
 export function createGoogleAuthUrl({
@@ -466,4 +473,48 @@ function stripHtml(html: string): string {
 
 function cryptoRandomId() {
   return randomBytes(8).toString("hex")
+}
+
+interface CreateDraftReplyOptions {
+  threadId: string
+  to: string
+  subject: string
+  body: string
+  inReplyTo?: string
+  references?: string[]
+}
+
+export async function createDraftReply(
+  tokens: Credentials,
+  options: CreateDraftReplyOptions
+) {
+  const gmail = createGmailClient(tokens)
+
+  const headers = [
+    `To: ${options.to}`,
+    `Subject: ${options.subject}`,
+    options.inReplyTo ? `In-Reply-To: ${options.inReplyTo}` : null,
+    options.references?.length
+      ? `References: ${options.references.join(" ")}`
+      : null,
+    "Content-Type: text/plain; charset=UTF-8",
+  ].filter(Boolean)
+
+  const message = [...headers, "", options.body].join("\r\n")
+
+  const raw = Buffer.from(message, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "")
+
+  await gmail.users.drafts.create({
+    userId: "me",
+    requestBody: {
+      message: {
+        threadId: options.threadId,
+        raw,
+      },
+    },
+  })
 }

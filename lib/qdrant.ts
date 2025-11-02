@@ -30,6 +30,15 @@ export interface VectorRecord {
   payload?: Record<string, unknown>
 }
 
+export interface ThreadQAPayload {
+  threadId: string
+  question: string
+  answer: string
+  createdAt?: string | null
+  ingestedAt?: string | null
+}
+type RawPayload = Record<string, unknown>
+
 export function assertCollectionName() {
   const collection = process.env.QDRANT_COLLECTION
   if (!collection) {
@@ -83,4 +92,98 @@ export function createStablePointId(threadId: string, question: string) {
     12,
     16
   )}-${hash.slice(16, 20)}-${hash.slice(20)}`
+}
+
+export async function fetchThreadQAPayloads(
+  threadId: string
+): Promise<ThreadQAPayload[]> {
+  if (!threadId) {
+    return []
+  }
+
+  const client = getQdrantClient()
+  const collection = assertCollectionName()
+
+  const results: ThreadQAPayload[] = []
+
+  let pagination: unknown = undefined
+
+  while (true) {
+    const response = await client.scroll(collection, {
+      limit: 64,
+      offset: pagination ?? undefined,
+      with_payload: true,
+      with_vector: false,
+      filter: {
+        must: [
+          {
+            key: "threadId",
+            match: {
+              value: threadId,
+            },
+          },
+        ],
+      },
+    })
+
+    const points =
+      "points" in response && Array.isArray(response.points)
+        ? response.points
+        : "result" in response && Array.isArray(response.result)
+        ? response.result
+        : []
+
+    if (points?.length) {
+      for (const point of points) {
+        const parsed = parseThreadQAPayload(point?.payload ?? {}, threadId)
+        if (parsed) {
+          results.push(parsed)
+        }
+      }
+    }
+
+    const next =
+      "next_page_offset" in response ? response.next_page_offset : undefined
+
+    if (!next) {
+      break
+    }
+
+    pagination = next
+  }
+
+  return results
+}
+
+export function parseThreadQAPayload(
+  payload: RawPayload,
+  fallbackThreadId?: string
+): ThreadQAPayload | null {
+  if (!payload || typeof payload !== "object") {
+    return null
+  }
+
+  const threadId =
+    typeof payload.threadId === "string"
+      ? payload.threadId
+      : fallbackThreadId ?? ""
+
+  const question =
+    typeof payload.question === "string" ? payload.question.trim() : ""
+  const answer =
+    typeof payload.answer === "string" ? payload.answer.trim() : ""
+
+  if (!threadId || !question || !answer) {
+    return null
+  }
+
+  return {
+    threadId,
+    question,
+    answer,
+    createdAt:
+      typeof payload.createdAt === "string" ? payload.createdAt : null,
+    ingestedAt:
+      typeof payload.ingestedAt === "string" ? payload.ingestedAt : null,
+  }
 }

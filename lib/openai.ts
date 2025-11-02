@@ -153,3 +153,63 @@ function cleanModelOutput(raw?: string | null): string | null {
 
   return text
 }
+
+interface GenerateReplyOptions {
+  threadSubject: string
+  latestMessageFrom: string
+  latestMessageBody: string
+  qaPairs: ThreadQAEntry[]
+  fallback?: string
+  model?: string
+}
+
+export async function generateReplyFromKnowledge({
+  threadSubject,
+  latestMessageFrom,
+  latestMessageBody,
+  qaPairs,
+  fallback = "I’m not sure how to answer that right now.",
+  model = DEFAULT_RESPONSE_MODEL,
+}: GenerateReplyOptions): Promise<string> {
+  const client = getOpenAIClient()
+
+  const qaContext = qaPairs
+    .map(
+      (pair, index) =>
+        `${index + 1}. Q: ${pair.question}\n   A: ${pair.answer}`
+    )
+    .join("\n")
+
+  const prompt = `
+You are an email assistant tasked with drafting a professional reply based on prior question and answer knowledge extracted from the same thread.
+
+Thread subject: ${threadSubject}
+Latest message sender: ${latestMessageFrom}
+Latest message body:
+"""
+${latestMessageBody.trim()}
+"""
+
+Relevant Q&A knowledge (${qaPairs.length} entries):
+${qaContext || "No previous Q&A pairs available."}
+
+Write the body of the email reply only. Keep it concise, helpful, and reference the knowledge base where applicable. If the knowledge base does not contain a suitable answer, respond with exactly: "${fallback}".
+`.trim()
+
+  try {
+    const response = await client.responses.create({
+      model,
+      input: prompt,
+    })
+
+    const text = cleanModelOutput(response.output_text)
+    if (!text) {
+      return fallback
+    }
+
+    return text
+  } catch (error) {
+    console.error("Failed to generate reply from knowledge", error)
+    return fallback
+  }
+}
