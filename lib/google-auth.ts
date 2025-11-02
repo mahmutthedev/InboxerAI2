@@ -50,10 +50,30 @@ export interface GmailMessageDetail {
   date?: string
   snippet?: string
   bodyText: string
+  messageIdHeader?: string
+  referencesHeader?: string
 }
 
 export interface GmailThreadDetail extends GmailThreadSummary {
   messages: GmailMessageDetail[]
+}
+
+export interface GmailDraftSummary {
+  id: string
+  threadId?: string
+  message: GmailMessageDetail
+}
+
+export interface GmailFetchedMessage {
+  threadId?: string
+  labelIds?: string[]
+  detail: GmailMessageDetail
+}
+
+export interface GmailHistoryMessage {
+  threadId: string
+  messageId: string
+  labelIds?: string[]
 }
 
 export const GOOGLE_OAUTH_STATE_COOKIE = "google_oauth_state"
@@ -285,6 +305,125 @@ export async function fetchGmailThreadDetail(
   }
 }
 
+export async function fetchGmailMessageDetail(
+  tokens: Credentials,
+  messageId: string
+): Promise<GmailFetchedMessage> {
+  const gmail = createGmailClient(tokens)
+  const { data } = await gmail.users.messages.get({
+    userId: "me",
+    id: messageId,
+    format: "full",
+  })
+
+  if (!data) {
+    throw new Error("Unable to load Gmail message")
+  }
+
+  return {
+    threadId: data.threadId ?? undefined,
+    labelIds: data.labelIds ?? undefined,
+    detail: buildMessageDetail(data),
+  }
+}
+
+export async function fetchGmailHistoryMessages(
+  tokens: Credentials,
+  startHistoryId?: string | null
+): Promise<GmailHistoryMessage[]> {
+  if (!startHistoryId) {
+    return []
+  }
+
+  const gmail = createGmailClient(tokens)
+  const results: GmailHistoryMessage[] = []
+  let pageToken: string | undefined
+  let pageCount = 0
+
+  do {
+    const { data } = await gmail.users.history.list({
+      userId: "me",
+      startHistoryId,
+      historyTypes: ["messageAdded"],
+      pageToken,
+      maxResults: 100,
+    })
+
+    const historyRecords = data.history ?? []
+    for (const record of historyRecords) {
+      const additions = record.messagesAdded ?? []
+      for (const added of additions) {
+        const message = added.message
+        if (message?.id && message.threadId) {
+          results.push({
+            threadId: message.threadId,
+            messageId: message.id,
+            labelIds: message.labelIds ?? undefined,
+          })
+        }
+      }
+    }
+
+    pageToken = data.nextPageToken ?? undefined
+    pageCount += 1
+  } while (pageToken && pageCount < 20)
+
+  return results
+}
+
+export async function fetchGmailDrafts(
+  tokens: Credentials,
+  limit = 20
+): Promise<GmailDraftSummary[]> {
+  const gmail = createGmailClient(tokens)
+  const drafts: GmailDraftSummary[] = []
+  let pageToken: string | undefined
+
+  while (drafts.length < limit) {
+    const { data } = await gmail.users.drafts.list({
+      userId: "me",
+      maxResults: Math.min(50, limit - drafts.length),
+      pageToken,
+    })
+
+    const draftRefs = data.drafts ?? []
+    if (!draftRefs.length) {
+      break
+    }
+
+    for (const draftRef of draftRefs) {
+      if (!draftRef?.id) {
+        continue
+      }
+      const draft = await gmail.users.drafts.get({
+        userId: "me",
+        id: draftRef.id,
+        format: "full",
+      })
+
+      const message = draft.data?.message
+      if (message) {
+        drafts.push({
+          id: draftRef.id,
+          threadId: message.threadId ?? undefined,
+          message: buildMessageDetail(message),
+        })
+      }
+
+      if (drafts.length >= limit) {
+        break
+      }
+    }
+
+    pageToken = data.nextPageToken ?? undefined
+    if (!pageToken) {
+      break
+    }
+  }
+
+  return drafts
+}
+
 export function encodeOAuthSessionCookie(payload: GoogleOAuthSessionPayload) {
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")
 }
@@ -350,6 +489,8 @@ function buildMessageDetail(message: gmail_v1.Schema$Message): GmailMessageDetai
   const date = extractHeader(headers, "Date") || undefined
   const snippet = message.snippet ?? undefined
   const bodyText = extractMessageBody(message.payload)
+  const messageIdHeader = extractHeader(headers, "Message-ID")
+  const referencesHeader = extractHeader(headers, "References")
 
   return {
     id: message.id ?? cryptoRandomId(),
@@ -359,6 +500,8 @@ function buildMessageDetail(message: gmail_v1.Schema$Message): GmailMessageDetai
     date,
     snippet,
     bodyText,
+    messageIdHeader,
+    referencesHeader,
   }
 }
 

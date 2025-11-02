@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
+import { processGmailHistoryNotification } from "@/lib/gmail-automation"
+
 interface PubSubEnvelope {
   message?: {
     data?: string
@@ -70,8 +72,26 @@ export async function POST(request: NextRequest) {
     notification.historyId
   )
 
-  // TODO: look up stored credentials for the account and process the historyId.
-  // For now we simply acknowledge receipt so Google does not retry.
+  let processedSummary: { processed: number; details: string[] } = {
+    processed: 0,
+    details: [],
+  }
+
+  try {
+    processedSummary = await processGmailHistoryNotification(
+      notification.emailAddress,
+      notification.historyId
+    )
+  } catch (error) {
+    console.error(
+      "Failed to process Gmail history notification",
+      notification,
+      error
+    )
+    processedSummary.details.push(
+      error instanceof Error ? error.message : "Processing error."
+    )
+  }
 
   return NextResponse.json(
     {
@@ -79,6 +99,8 @@ export async function POST(request: NextRequest) {
       emailAddress: notification.emailAddress,
       historyId: notification.historyId,
       messageId: payload.message?.messageId ?? null,
+      processedMessages: processedSummary.processed,
+      notes: processedSummary.details,
     },
     { status: 202 }
   )

@@ -9,6 +9,7 @@ import {
   listStoredGoogleAccounts,
   upsertStoredGoogleAccount,
 } from "@/lib/account-store"
+import { updateIngestState } from "@/lib/ingest-state"
 
 interface WatchRequestBody {
   email?: string
@@ -72,6 +73,10 @@ export async function POST(request: NextRequest) {
       profile: account.profile,
       gmail: account.gmail,
     })
+
+    if (watchResponse?.historyId) {
+      await updateIngestState({ historyId: watchResponse.historyId })
+    }
 
     return NextResponse.json({
       success: true,
