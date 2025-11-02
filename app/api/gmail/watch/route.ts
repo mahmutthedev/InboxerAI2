@@ -1,0 +1,94 @@
+import { NextRequest, NextResponse } from "next/server"
+
+import {
+  createGmailClient,
+  registerGmailWatch,
+} from "@/lib/google-auth"
+import {
+  getStoredGoogleAccount,
+  listStoredGoogleAccounts,
+  upsertStoredGoogleAccount,
+} from "@/lib/account-store"
+
+interface WatchRequestBody {
+  email?: string
+  labelIds?: string[]
+  labelFilterAction?: "include" | "exclude"
+}
+
+export async function POST(request: NextRequest) {
+  const topicName = process.env.GMAIL_PUBSUB_TOPIC
+  if (!topicName) {
+    return NextResponse.json(
+      { error: "GMAIL_PUBSUB_TOPIC environment variable is not set." },
+      { status: 500 }
+    )
+  }
+
+  let body: WatchRequestBody = {}
+  try {
+    body = await request.json()
+  } catch {
+    // body optional
+  }
+
+  const accounts = await listStoredGoogleAccounts()
+  if (!accounts.length) {
+    return NextResponse.json(
+      {
+        error:
+          "No stored Google accounts found. Connect a Gmail account through the UI first.",
+      },
+      { status: 400 }
+    )
+  }
+
+  const targetEmail = body.email?.toLowerCase() ?? accounts[0].email.toLowerCase()
+  const account = await getStoredGoogleAccount(targetEmail)
+
+  if (!account) {
+    return NextResponse.json(
+      {
+        error: `Stored account for ${targetEmail} was not found.`,
+      },
+      { status: 404 }
+    )
+  }
+
+  try {
+    const watchResponse = await registerGmailWatch(account.tokens, {
+      topicName,
+      labelIds: body.labelIds,
+      labelFilterAction: body.labelFilterAction ?? "include",
+    })
+
+    // Persist tokens in case the client refreshed them during the request.
+    const gmailClient = createGmailClient(account.tokens)
+    const updatedTokens = gmailClient?.context?.auth?.credentials ?? account.tokens
+
+    await upsertStoredGoogleAccount({
+      email: account.email,
+      tokens: updatedTokens,
+      profile: account.profile,
+      gmail: account.gmail,
+    })
+
+    return NextResponse.json({
+      success: true,
+      email: account.email,
+      topicName,
+      historyId: watchResponse?.historyId ?? null,
+      expiration: watchResponse?.expiration ?? null,
+      labelIds: watchResponse?.labelIds ?? body.labelIds ?? null,
+    })
+  } catch (error) {
+    console.error("Failed to register Gmail watch", error)
+    return NextResponse.json(
+      {
+        error:
+          (error as Error).message ?? "Failed to register Gmail watch subscription.",
+      },
+      { status: 500 }
+    )
+  }
+}

@@ -78,7 +78,7 @@ function createOAuthClient(redirectUri?: string): OAuth2Client {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri)
 }
 
-function createGmailClient(tokens: Credentials) {
+export function createGmailClient(tokens: Credentials) {
   const oauthClient = createOAuthClient()
   oauthClient.setCredentials(tokens)
   return google.gmail({ version: "v1", auth: oauthClient })
@@ -517,4 +517,31 @@ export async function createDraftReply(
       },
     },
   })
+}
+
+interface WatchMailboxOptions {
+  topicName: string
+  labelIds?: string[]
+  labelFilterAction?: "include" | "exclude"
+}
+
+export async function registerGmailWatch(
+  tokens: Credentials,
+  { topicName, labelIds, labelFilterAction = "include" }: WatchMailboxOptions
+) {
+  if (!topicName) {
+    throw new Error("Gmail watch topicName is required.")
+  }
+
+  const gmail = createGmailClient(tokens)
+  const { data } = await gmail.users.watch({
+    userId: "me",
+    requestBody: {
+      topicName,
+      labelIds,
+      labelFilterAction,
+    },
+  })
+
+  return data
 }

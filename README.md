@@ -29,6 +29,7 @@ InboxerAI connects to Gmail, analyzes every thread with LLMs, and stores structu
    QDRANT_URL=http://localhost:6333
    QDRANT_API_KEY=your-qdrant-api-key # optional when running locally
    QDRANT_COLLECTION=inboxerai_threads
+   GMAIL_PUBSUB_TOPIC=projects/your-project/topics/your-topic
    GOOGLE_PUBSUB_VERIFICATION_TOKEN=choose-a-shared-secret
    ```
 
