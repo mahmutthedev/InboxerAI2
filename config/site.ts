@@ -10,6 +10,10 @@ export const siteConfig = {
       title: "Inbox",
       href: "/",
     },
+    {
+      title: "Drafts",
+      href: "/drafts",
+    },
   ],
   links: {
     github: "#",

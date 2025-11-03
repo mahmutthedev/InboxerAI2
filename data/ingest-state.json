@@ -101,10 +101,11 @@
     "19a019e368d9c336",
     "19a01c807f640502"
   ],
-  "totalThreadsDetected": 1401,
+  "historyId": 130921,
+  "totalThreadsDetected": 1407,
   "lastFullIngestAt": "2025-11-01T08:11:58.736Z",
   "lastPreviewAt": "2025-11-01T08:10:04.411Z",
-  "lastUpdatedAt": "2025-11-03T03:28:20.491Z",
+  "lastUpdatedAt": "2025-11-03T04:14:08.590Z",
   "rules": "",
   "previewMaxThreads": 100
 }

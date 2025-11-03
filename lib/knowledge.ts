@@ -17,6 +17,7 @@ export async function searchKnowledgeBase(
   { limit = 8, threadId }: KnowledgeSearchOptions = {}
 ): Promise<ThreadQAPayload[]> {
   if (!query?.trim()) {
+    console.debug("[knowledge] Empty query received; skipping search.")
     return []
   }
 
@@ -24,6 +25,7 @@ export async function searchKnowledgeBase(
   const [vector] = embeddings
 
   if (!vector?.length) {
+    console.warn("[knowledge] Unable to create embedding for query.")
     return []
   }
 
@@ -49,6 +51,11 @@ export async function searchKnowledgeBase(
     limit,
     with_payload: true,
     filter,
+  })
+  console.debug("[knowledge] Qdrant search results", {
+    returned: response.length,
+    limit,
+    hasFilter: Boolean(filter),
   })
 
   const results: ThreadQAPayload[] = []

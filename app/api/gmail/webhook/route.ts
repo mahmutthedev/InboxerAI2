@@ -24,9 +24,15 @@ function unauthorized(message: string) {
 }
 
 export async function POST(request: NextRequest) {
+  console.info("[gmail-webhook] Incoming request", {
+    url: request.nextUrl.toString(),
+    token: request.nextUrl.searchParams.get("token") ?? null,
+  })
+
   if (VERIFICATION_TOKEN) {
     const token = request.nextUrl.searchParams.get("token")
     if (!token || token !== VERIFICATION_TOKEN) {
+      console.warn("[gmail-webhook] Invalid verification token", { token })
       return unauthorized("Invalid verification token.")
     }
   }
@@ -40,6 +46,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (!payload?.message?.data) {
+    console.warn("[gmail-webhook] No message data in Pub/Sub payload", payload)
     return NextResponse.json(
       { error: "No Pub/Sub message data provided." },
       { status: 400 }
@@ -82,6 +89,11 @@ export async function POST(request: NextRequest) {
       notification.emailAddress,
       notification.historyId
     )
+    console.info("[gmail-webhook] Processed history notification", {
+      email: notification.emailAddress,
+      historyId: notification.historyId,
+      processedMessages: processedSummary.processed,
+    })
   } catch (error) {
     console.error(
       "Failed to process Gmail history notification",
