@@ -104,10 +104,10 @@
   "historyId": 131781,
   "totalThreadsDetected": 1411,
   "lastFullIngestAt": "2025-11-01T08:11:58.736Z",
-  "lastPreviewAt": "2025-11-01T08:10:04.411Z",
-  "lastUpdatedAt": "2025-11-03T04:52:14.335Z",
+  "lastPreviewAt": "2025-11-03T05:07:15.600Z",
+  "lastUpdatedAt": "2025-11-03T05:07:15.615Z",
   "rules": "",
-  "previewMaxThreads": 100,
+  "previewMaxThreads": 10,
   "replyInstructions": "Always sign off as BAIA Team.",
   "watchRegisteredAt": "2025-11-03T04:48:42.467Z",
   "watchExpiration": "2025-11-10T04:48:42.244Z"
