@@ -67,9 +67,18 @@ export async function POST(request: NextRequest) {
       gmail: account.gmail,
     })
 
-    if (watchResponse?.historyId) {
-      await updateIngestState({ historyId: watchResponse.historyId })
-    }
+    const registeredAt = new Date().toISOString()
+    const expirationIso = watchResponse?.expiration
+      ? new Date(Number(watchResponse.expiration)).toISOString()
+      : null
+
+    await updateIngestState({
+      ...(watchResponse?.historyId
+        ? { historyId: watchResponse.historyId }
+        : {}),
+      watchRegisteredAt: registeredAt,
+      watchExpiration: expirationIso,
+    })
 
     return NextResponse.json({
       success: true,
@@ -78,6 +87,8 @@ export async function POST(request: NextRequest) {
       historyId: watchResponse?.historyId ?? null,
       expiration: watchResponse?.expiration ?? null,
       labelIds: body.labelIds ?? null,
+      watchRegisteredAt: registeredAt,
+      watchExpiration: expirationIso,
     })
   } catch (error) {
     console.error("Failed to register Gmail watch", error)
@@ -90,4 +101,6 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+
 

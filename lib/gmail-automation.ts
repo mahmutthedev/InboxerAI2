@@ -34,6 +34,7 @@ export async function processGmailHistoryNotification(
 
   const ingestState = await readIngestState()
   const startHistoryId = ingestState.historyId
+  const replyInstructions = ingestState.replyInstructions ?? ""
   console.info("[gmail-automation] Current history cursor", {
     startHistoryId,
   })
@@ -161,6 +162,7 @@ export async function processGmailHistoryNotification(
         latestMessageBody: messageDetail.bodyText ?? "",
         qaPairs,
         fallback: "I don't know the answer.",
+        instructions: replyInstructions,
       })
 
       console.debug("[gmail-automation] Generated reply body length", {

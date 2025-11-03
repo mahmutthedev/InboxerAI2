@@ -8,6 +8,7 @@ import {
 } from "@/lib/google-auth"
 import { searchKnowledgeBase } from "@/lib/knowledge"
 import { generateReplyFromKnowledge } from "@/lib/openai"
+import { readIngestState } from "@/lib/ingest-state"
 
 interface IncomingRequestBody {
   threadId?: string
@@ -15,9 +16,6 @@ interface IncomingRequestBody {
 }
 
 export async function POST(request: NextRequest) {
-
-  debugger;
-  console.log(request)
   const sessionCookie = request.cookies.get(GOOGLE_OAUTH_SESSION_COOKIE)
   if (!sessionCookie?.value) {
     return NextResponse.json(
@@ -78,7 +76,9 @@ export async function POST(request: NextRequest) {
       .filter(Boolean)
       .join("\n")
 
-    const qaPairs = await searchKnowledgeBase(queryText, { limit: 8 })
+    const qaPairs = await searchKnowledgeBase(queryText, { limit: 15 })
+
+    const ingestState = await readIngestState()
 
     const fallbackMessage = body.fallbackMessage?.trim() || "I don't know the answer."
 
@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
       latestMessageBody: latestMessage.bodyText ?? "",
       qaPairs,
       fallback: fallbackMessage,
+      instructions: ingestState.replyInstructions ?? "",
     })
 
     const replySubject = thread.subject
@@ -97,12 +98,20 @@ export async function POST(request: NextRequest) {
       : "Re: Your email"
 
     const recipient = latestMessage.from ?? latestMessage.to ?? "recipient"
+    const references = latestMessage.referencesHeader
+      ? latestMessage.referencesHeader.split(/\s+/).filter(Boolean)
+      : []
+    if (latestMessage.messageIdHeader) {
+      references.push(latestMessage.messageIdHeader)
+    }
 
     await createDraftReply(session.tokens, {
       threadId,
       to: recipient,
       subject: replySubject,
       body: replyBody,
+      inReplyTo: latestMessage.messageIdHeader,
+      references: references.length ? references : undefined,
     })
 
     return NextResponse.json({

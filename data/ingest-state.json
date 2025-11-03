@@ -101,11 +101,14 @@
     "19a019e368d9c336",
     "19a01c807f640502"
   ],
-  "historyId": 131675,
+  "historyId": 131781,
   "totalThreadsDetected": 1411,
   "lastFullIngestAt": "2025-11-01T08:11:58.736Z",
   "lastPreviewAt": "2025-11-01T08:10:04.411Z",
-  "lastUpdatedAt": "2025-11-03T04:29:21.006Z",
+  "lastUpdatedAt": "2025-11-03T04:52:14.335Z",
   "rules": "",
-  "previewMaxThreads": 100
+  "previewMaxThreads": 100,
+  "replyInstructions": "Always sign off as BAIA Team.",
+  "watchRegisteredAt": "2025-11-03T04:48:42.467Z",
+  "watchExpiration": "2025-11-10T04:48:42.244Z"
 }

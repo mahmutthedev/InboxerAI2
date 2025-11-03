@@ -161,6 +161,7 @@ interface GenerateReplyOptions {
   qaPairs: ThreadQAEntry[]
   fallback?: string
   model?: string
+  instructions?: string
 }
 
 export async function generateReplyFromKnowledge({
@@ -168,8 +169,9 @@ export async function generateReplyFromKnowledge({
   latestMessageFrom,
   latestMessageBody,
   qaPairs,
-  fallback = "I’m not sure how to answer that right now.",
+  fallback = "I'm not sure how to answer that right now.",
   model = DEFAULT_RESPONSE_MODEL,
+  instructions,
 }: GenerateReplyOptions): Promise<string> {
   const client = getOpenAIClient()
 
@@ -180,6 +182,10 @@ export async function generateReplyFromKnowledge({
     )
     .join("\n")
 
+  const instructionBlock = instructions
+    ? `Additional instructions for the assistant:\n${instructions.trim()}\n`
+    : ""
+
   const prompt = `
 You are an email assistant tasked with drafting a professional reply based on prior question and answer knowledge extracted from the same thread.
 
@@ -189,6 +195,8 @@ Latest message body:
 """
 ${latestMessageBody.trim()}
 """
+
+${instructionBlock}
 
 Relevant Q&A knowledge (${qaPairs.length} entries):
 ${qaContext || "No previous Q&A pairs available."}

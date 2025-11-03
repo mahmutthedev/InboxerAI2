@@ -10,6 +10,9 @@ export interface GmailIngestState {
   lastUpdatedAt?: string
   rules?: string
   previewMaxThreads?: number | null
+  replyInstructions?: string
+  watchRegisteredAt?: string | null
+  watchExpiration?: string | null
 }
 
 const STATE_DIR = path.join(process.cwd(), "data")
@@ -19,6 +22,9 @@ const defaultState: GmailIngestState = {
   processedThreadIds: [],
   rules: "",
   previewMaxThreads: null,
+  replyInstructions: "",
+  watchRegisteredAt: null,
+  watchExpiration: null,
 }
 
 async function ensureStateDir() {
@@ -82,6 +88,9 @@ export function summarizeState(state: GmailIngestState) {
       typeof state.previewMaxThreads === "number"
         ? state.previewMaxThreads
         : null,
+    replyInstructions: state.replyInstructions ?? "",
+    watchRegisteredAt: state.watchRegisteredAt ?? null,
+    watchExpiration: state.watchExpiration ?? null,
   }
 }
 
@@ -102,6 +111,18 @@ function normalizeState(
         ? partial.rules
         : "",
     previewMaxThreads: normalizePositiveInteger(partial.previewMaxThreads),
+    replyInstructions:
+      typeof partial.replyInstructions === "string"
+        ? partial.replyInstructions
+        : "",
+    watchRegisteredAt:
+      typeof partial.watchRegisteredAt === "string"
+        ? partial.watchRegisteredAt
+        : null,
+    watchExpiration:
+      typeof partial.watchExpiration === "string"
+        ? partial.watchExpiration
+        : null,
   }
 }
 
@@ -146,6 +167,18 @@ function mergeState(
       update.previewMaxThreads === null
         ? null
         : normalizePositiveInteger(update.previewMaxThreads)
+  }
+
+  if (update.replyInstructions !== undefined) {
+    merged.replyInstructions = update.replyInstructions ?? ""
+  }
+
+  if (update.watchRegisteredAt !== undefined) {
+    merged.watchRegisteredAt = update.watchRegisteredAt ?? null
+  }
+
+  if (update.watchExpiration !== undefined) {
+    merged.watchExpiration = update.watchExpiration ?? null
   }
 
   return merged
