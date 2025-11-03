@@ -35,3 +35,4 @@ yarn-error.log*
 .contentlayer
 .env
 data/accounts.json
+data/ingest-state.json
