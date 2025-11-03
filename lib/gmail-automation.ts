@@ -38,6 +38,12 @@ export async function processGmailHistoryNotification(
     startHistoryId,
   })
 
+  const incomingHistory = parseHistoryId(historyId)
+  if (!incomingHistory) {
+    console.warn("[gmail-automation] Unable to parse historyId", { historyId })
+    return { processed: 0, details: ["Invalid historyId received."] }
+  }
+
   // If we don't have a baseline history ID yet, store the current one and exit.
   if (!startHistoryId) {
     await updateIngestState({ historyId })
@@ -46,6 +52,19 @@ export async function processGmailHistoryNotification(
       historyId
     )
     return { processed: 0, details: ["Initialized history cursor."] }
+  }
+
+  const startHistory = parseHistoryId(startHistoryId)
+
+  if (startHistory && incomingHistory <= startHistory) {
+    console.info("[gmail-automation] Notification is older than cursor; ignoring.", {
+      historyId,
+      startHistoryId,
+    })
+    return {
+      processed: 0,
+      details: ["Notification already processed; cursor ahead."],
+    }
   }
 
   if (startHistoryId === historyId) {
@@ -205,4 +224,15 @@ export async function processGmailHistoryNotification(
   })
 
   return { processed: processedCount, details: processedDetails }
+}
+
+function parseHistoryId(value?: string | null): bigint | null {
+  if (!value) {
+    return null
+  }
+  try {
+    return BigInt(value)
+  } catch {
+    return null
+  }
 }
