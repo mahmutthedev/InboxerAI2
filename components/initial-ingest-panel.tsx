@@ -62,6 +62,9 @@ export function InitialIngestPanel({
     "info"
   )
   const [preview, setPreview] = useState<PreviewResult | null>(null)
+  const [liveThreadTotal, setLiveThreadTotal] = useState<number | null>(
+    typeof gmailThreadCount === "number" ? gmailThreadCount : null
+  )
   const [ingestState, setIngestState] = useState<IngestStateSummary | null>(null)
   const [rulesValue, setRulesValue] = useState("")
   const [rulesDraft, setRulesDraft] = useState("")
@@ -153,6 +156,56 @@ export function InitialIngestPanel({
   )
 
   useEffect(() => {
+    if (
+      typeof gmailThreadCount === "number" &&
+      Number.isFinite(gmailThreadCount)
+    ) {
+      setLiveThreadTotal((current) =>
+        current === gmailThreadCount ? current : gmailThreadCount
+      )
+    }
+  }, [gmailThreadCount])
+
+  useEffect(() => {
+    let isActive = true
+
+    async function refreshGmailThreadTotal() {
+      try {
+        const response = await fetch("/api/gmail/profile", {
+          cache: "no-store",
+        })
+        if (!response.ok) {
+          throw new Error("Failed to fetch Gmail profile.")
+        }
+
+        const data = await response.json()
+        const threads =
+          typeof data?.threadsTotal === "number"
+            ? data.threadsTotal
+            : typeof data?.profile?.threadsTotal === "number"
+            ? data.profile.threadsTotal
+            : null
+
+        if (!isActive) {
+          return
+        }
+
+        if (typeof threads === "number" && Number.isFinite(threads)) {
+          setLiveThreadTotal(threads)
+        }
+      } catch (error) {
+        console.error("Unable to refresh Gmail thread total", error)
+      }
+    }
+
+    refreshGmailThreadTotal()
+
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  useEffect(() => {
     refreshStats().catch(() => {
       /* ignored */
     })
@@ -163,14 +216,15 @@ export function InitialIngestPanel({
 
   useEffect(() => {
     if (
-      gmailThreadCount &&
-      ingestState?.totalThreadsDetected !== gmailThreadCount
+      typeof liveThreadTotal === "number" &&
+      Number.isFinite(liveThreadTotal) &&
+      ingestState?.totalThreadsDetected !== liveThreadTotal
     ) {
-      syncIngestState({ totalThreadsDetected: gmailThreadCount }).catch(() => {
+      syncIngestState({ totalThreadsDetected: liveThreadTotal }).catch(() => {
         /* ignored */
       })
     }
-  }, [gmailThreadCount, ingestState?.totalThreadsDetected, syncIngestState])
+  }, [liveThreadTotal, ingestState?.totalThreadsDetected, syncIngestState])
 
   useEffect(() => {
     const currentRules = ingestState?.rules ?? ""
@@ -350,7 +404,8 @@ export function InitialIngestPanel({
         setStatusMessage("No Gmail threads remaining to ingest.")
         await syncIngestState({
           lastPreviewAt: new Date().toISOString(),
-          totalThreadsDetected: gmailThreadCount ?? null,
+          totalThreadsDetected:
+            liveThreadTotal ?? ingestState?.totalThreadsDetected ?? null,
         })
         return
       }
@@ -457,7 +512,8 @@ export function InitialIngestPanel({
 
       await syncIngestState({
         lastPreviewAt: new Date().toISOString(),
-        totalThreadsDetected: gmailThreadCount ?? null,
+        totalThreadsDetected:
+          liveThreadTotal ?? ingestState?.totalThreadsDetected ?? null,
       })
 
       if (threadsWithQuestionsLocal === 0) {
@@ -545,11 +601,12 @@ export function InitialIngestPanel({
         `Ingested ${data.upserted} question & answer pairs into collection "${data.collection}".`
       )
       await refreshStats()
-      await syncIngestState({
-        processedThreadIds,
-        lastFullIngestAt: new Date().toISOString(),
-        totalThreadsDetected: gmailThreadCount ?? null,
-      })
+    await syncIngestState({
+      processedThreadIds,
+      lastFullIngestAt: new Date().toISOString(),
+      totalThreadsDetected:
+        liveThreadTotal ?? ingestState?.totalThreadsDetected ?? null,
+    })
       setPreview(null)
       setProgressCurrent(0)
       setProgressTotal(0)
@@ -594,7 +651,7 @@ export function InitialIngestPanel({
 
   const processedThreadsCount = ingestState?.processedThreads ?? 0
   const totalThreadsDetected =
-    gmailThreadCount ?? ingestState?.totalThreadsDetected ?? null
+    liveThreadTotal ?? ingestState?.totalThreadsDetected ?? null
   const coveragePercentage = totalThreadsDetected
     ? Math.min((processedThreadsCount / totalThreadsDetected) * 100, 100)
     : null
@@ -745,7 +802,7 @@ export function InitialIngestPanel({
         <div className="rounded-lg border border-border bg-background/60 p-4">
           <dt className="text-muted-foreground">Gmail threads detected</dt>
           <dd className="mt-1 text-base font-semibold text-foreground">
-            {gmailThreadCount?.toLocaleString() ?? "—"}
+            {liveThreadTotal?.toLocaleString() ?? "-"}
           </dd>
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-4">
