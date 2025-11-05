@@ -7,7 +7,10 @@ import {
 import { getStoredGoogleAccount, upsertStoredGoogleAccount } from "@/lib/account-store"
 import { readIngestState, updateIngestState } from "@/lib/ingest-state"
 import { searchKnowledgeBase } from "@/lib/knowledge"
-import { generateReplyFromKnowledge } from "@/lib/openai"
+import {
+  generateReplyFromKnowledge,
+  shouldRespondToMessage,
+} from "@/lib/openai"
 
 export async function processGmailHistoryNotification(
   email: string,
@@ -148,6 +151,35 @@ export async function processGmailHistoryNotification(
         subject: thread.subject,
       })
 
+      const threadMessagesForPrompt = Array.isArray(thread.messages)
+        ? [...thread.messages]
+        : []
+
+      if (
+        messageDetail &&
+        !threadMessagesForPrompt.some((message) => message.id === messageDetail.id)
+      ) {
+        threadMessagesForPrompt.push(messageDetail)
+      }
+
+      const shouldReply = await shouldRespondToMessage({
+        threadSubject: thread.subject ?? messageDetail.subject,
+        latestMessage: messageDetail,
+        threadMessages: threadMessagesForPrompt,
+        instructions: replyInstructions,
+      })
+
+      if (!shouldReply) {
+        console.debug(
+          "[gmail-automation] Classifier opted not to respond to message",
+          messageId
+        )
+        processedDetails.push(
+          `[skip] Classifier skipped automated reply for message ${messageId}.`
+        )
+        continue
+      }
+
       const qaPairs = await searchKnowledgeBase(
         `${thread.subject ?? ""}\n${messageDetail.bodyText}`,
         { limit: 6 }
@@ -161,6 +193,8 @@ export async function processGmailHistoryNotification(
         latestMessageFrom: messageDetail.from,
         latestMessageBody: messageDetail.bodyText ?? "",
         qaPairs,
+        threadMessages: threadMessagesForPrompt,
+        latestMessageId: messageDetail.id,
         fallback: "I don't know the answer.",
         instructions: replyInstructions,
       })

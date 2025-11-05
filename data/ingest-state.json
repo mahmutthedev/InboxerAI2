@@ -1,12 +1,12 @@
 {
   "processedThreadIds": [],
-  "historyId": 0,
+  "historyId": "",
   "totalThreadsDetected": 0,
   "lastFullIngestAt": "",
   "lastPreviewAt": "",
   "lastUpdatedAt": "",
   "rules": "",
-  "previewMaxThreads": 0,
+  "previewMaxThreads": null,
   "replyInstructions": "",
   "watchRegisteredAt": "",
   "watchExpiration": ""

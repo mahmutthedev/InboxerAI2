@@ -154,14 +154,88 @@ function cleanModelOutput(raw?: string | null): string | null {
   return text
 }
 
+interface ShouldRespondOptions {
+  threadSubject: string
+  latestMessage: GmailMessageDetail
+  threadMessages: GmailMessageDetail[]
+  model?: string
+  instructions?: string
+}
+
 interface GenerateReplyOptions {
   threadSubject: string
   latestMessageFrom: string
   latestMessageBody: string
   qaPairs: ThreadQAEntry[]
+  threadMessages: GmailMessageDetail[]
+  latestMessageId?: string
   fallback?: string
   model?: string
   instructions?: string
+}
+
+export async function shouldRespondToMessage({
+  threadSubject,
+  latestMessage,
+  threadMessages,
+  model = DEFAULT_RESPONSE_MODEL,
+  instructions,
+}: ShouldRespondOptions): Promise<boolean> {
+  const client = getOpenAIClient()
+
+  const { latestMessageText, historyText, isFirstMessage } =
+    buildThreadPromptSegments(threadMessages, latestMessage.id, latestMessage)
+
+  const instructionBlock = instructions
+    ? `Additional operator instructions:\n${instructions.trim()}\n`
+    : ""
+
+  const historyBlock = isFirstMessage
+    ? "There are no earlier messages in this thread."
+    : historyText
+    ? `Earlier messages in this thread (oldest to newest):\n${historyText}`
+    : "Earlier messages are unavailable."
+
+  const prompt = `
+You are triaging incoming customer-support email threads to decide whether an automated agent should draft a reply.
+
+Say \`true\` only when the latest message clearly expects a response from our team (questions, requests, clarifications, issues to address). Say \`false\` for newsletters, marketing blasts, system notifications, FYI updates, or anything that should not receive an automated reply.
+
+Return a strict JSON object: {"shouldRespond": true|false, "reason": "brief justification"}.
+
+Thread subject: ${threadSubject}
+
+Latest message under review:
+---
+${latestMessageText}
+---
+
+${isFirstMessage ? "This is the first message in the thread." : "This is part of an ongoing conversation."}
+
+${historyBlock}
+
+${instructionBlock}`.trim()
+
+  try {
+    const response = await client.responses.create({
+      model,
+      input: prompt,
+    })
+
+    const text = cleanModelOutput(response.output_text)
+    if (!text) {
+      return false
+    }
+
+    const parsed = JSON.parse(text) as {
+      shouldRespond?: boolean
+    }
+
+    return Boolean(parsed?.shouldRespond)
+  } catch (error) {
+    console.error("Failed to classify email for reply", error)
+    return false
+  }
 }
 
 export async function generateReplyFromKnowledge({
@@ -169,6 +243,8 @@ export async function generateReplyFromKnowledge({
   latestMessageFrom,
   latestMessageBody,
   qaPairs,
+  threadMessages,
+  latestMessageId,
   fallback = "I'm not sure how to answer that right now.",
   model = DEFAULT_RESPONSE_MODEL,
   instructions,
@@ -182,9 +258,22 @@ export async function generateReplyFromKnowledge({
     )
     .join("\n")
 
+  const { latestMessageText, historyText, isFirstMessage } =
+    buildThreadPromptSegments(
+      threadMessages,
+      latestMessageId,
+      threadMessages.find((message) => message.id === latestMessageId) ?? null
+    )
+
   const instructionBlock = instructions
     ? `Additional instructions for the assistant:\n${instructions.trim()}\n`
     : ""
+
+  const historyBlock = isFirstMessage
+    ? "There are no earlier messages in this thread."
+    : historyText
+    ? `Earlier thread context (oldest to newest):\n${historyText}`
+    : "Earlier messages are unavailable."
 
   const prompt = `
 You are an email assistant tasked with drafting a professional reply based on prior question and answer knowledge extracted from the same thread.
@@ -197,6 +286,15 @@ ${latestMessageBody.trim()}
 """
 
 ${instructionBlock}
+
+Latest message requiring your reply:
+---
+${latestMessageText}
+---
+
+${isFirstMessage ? "This appears to be the first message in the thread." : "This message is part of an ongoing conversation."}
+
+${historyBlock}
 
 Relevant Q&A knowledge (${qaPairs.length} entries):
 ${qaContext || "No previous Q&A pairs available."}
@@ -219,5 +317,65 @@ Write the body of the email reply only. Keep it concise, helpful, and reference 
   } catch (error) {
     console.error("Failed to generate reply from knowledge", error)
     return fallback
+  }
+}
+
+function buildThreadPromptSegments(
+  threadMessages: GmailMessageDetail[],
+  latestMessageId?: string,
+  latestFallback?: GmailMessageDetail | null
+): {
+  latestMessageText: string
+  historyText: string
+  isFirstMessage: boolean
+} {
+  const normalized = Array.isArray(threadMessages)
+    ? [...threadMessages]
+    : []
+
+  if (
+    latestFallback &&
+    !normalized.some((message) => message.id === latestFallback.id)
+  ) {
+    normalized.push(latestFallback)
+  }
+
+  if (!normalized.length) {
+    return {
+      latestMessageText: "Latest message content unavailable.",
+      historyText: "",
+      isFirstMessage: true,
+    }
+  }
+
+  let latestIndex =
+    typeof latestMessageId === "string"
+      ? normalized.findIndex((message) => message.id === latestMessageId)
+      : normalized.length - 1
+
+  if (latestIndex < 0) {
+    latestIndex = normalized.length - 1
+  }
+
+  const latestMessage = normalized[latestIndex]
+  const historyMessages = normalized.filter((_, index) => index !== latestIndex)
+  const isFirstMessage = historyMessages.length === 0
+
+  const historyLimit = 6
+  const limitedHistory =
+    historyMessages.length > historyLimit
+      ? historyMessages.slice(historyMessages.length - historyLimit)
+      : historyMessages
+
+  const historyText = limitedHistory
+    .map((message, index) => {
+      return `History message ${index + 1}:\n${formatMessageForPrompt(message)}`
+    })
+    .join("\n\n---\n\n")
+
+  return {
+    latestMessageText: formatMessageForPrompt(latestMessage),
+    historyText,
+    isFirstMessage,
   }
 }

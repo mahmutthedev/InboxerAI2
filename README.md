@@ -132,7 +132,8 @@ InboxerAI stores embeddings in Qdrant. You can run it in two ways:
    - The webhook validates the shared token.
    - The history worker fetches any new messages since the last cursor.
    - The latest message is embedded and searched against Qdrant to fetch relevant Q&A pairs.
-   - OpenAI generates a context-aware reply draft using the extracted knowledge plus your prompt instructions.
+   - A lightweight classifier checks whether the sender is genuinely asking for help; newsletters and FYI updates are skipped.
+   - OpenAI generates a context-aware reply draft using the whole thread context, the extracted knowledge, and your prompt instructions.
    - The draft is created in Gmail, and you can review it inside your mailbox or on the **Drafts** page in the app.
 
 ---
