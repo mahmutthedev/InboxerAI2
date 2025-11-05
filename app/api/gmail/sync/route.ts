@@ -50,11 +50,19 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const supportEmails = [
+      session.gmail?.emailAddress,
+      session.profile?.email,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .map((email) => email.toLowerCase())
+
     const results = await Promise.all(
       threadIds.map(async (threadId) => {
         const detail = await fetchGmailThreadDetail(session.tokens, threadId)
         const qa = await extractQuestionsAndAnswersFromThread(detail, {
           instructions: body.instructions,
+          supportEmails,
         })
 
         return {

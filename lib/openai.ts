@@ -16,6 +16,7 @@ export function getOpenAIClient() {
 interface ExtractQuestionsOptions {
   instructions?: string
   model?: string
+  supportEmails?: string[]
 }
 
 export interface ThreadQAEntry {
@@ -29,11 +30,15 @@ const DEFAULT_EMBEDDING_MODEL =
 
 export async function extractQuestionsAndAnswersFromThread(
   thread: GmailThreadDetail,
-  { instructions, model = DEFAULT_RESPONSE_MODEL }: ExtractQuestionsOptions = {}
+  {
+    instructions,
+    supportEmails,
+    model = DEFAULT_RESPONSE_MODEL,
+  }: ExtractQuestionsOptions = {}
 ): Promise<ThreadQAEntry[]> {
   const client = getOpenAIClient()
 
-  const prompt = buildPromptForThread(thread, instructions)
+  const prompt = buildPromptForThread(thread, instructions, supportEmails)
 
   const response = await client.responses.create({
     model,
@@ -89,7 +94,8 @@ export async function embedTexts(
 
 function buildPromptForThread(
   thread: GmailThreadDetail,
-  instructions?: string
+  instructions?: string,
+  supportEmails?: string[]
 ) {
   const condensedMessages = thread.messages.map((message) =>
     formatMessageForPrompt(message)
@@ -99,10 +105,25 @@ function buildPromptForThread(
     ? `Additional instructions from the operator:\n${instructions}\n`
     : ""
 
+  const normalizedSupport =
+    supportEmails
+      ?.map((email) => email?.trim().toLowerCase())
+      .filter(Boolean) ?? []
+  const supportBlock = normalizedSupport.length
+    ? `Support agent email addresses (treated as "us"): ${normalizedSupport.join(
+        ", "
+      )}\n`
+    : ""
+
   const prompt = `
-You are an email analysis assistant. Given the messages of a Gmail thread, extract any explicit questions that were asked and provide the best available answers from the thread context. If a question is unanswered, ignore it and don't include as part of the list. If there are no questions, return an empty array.
+You are an email analysis assistant. Given the messages of a Gmail thread, extract explicit customer questions that were answered by our support agent. A valid question/answer pair must satisfy:
+- The question is asked by someone outside our support team (sender email not in the support list).
+- The answer comes from our support agent (sender email in the support list) and is sent after the question.
+- The answer actually addresses the customer's question.
+If no valid answered questions exist, return an empty array. Do not include content where the sender asks and answers their own questions (for example, newsletters or marketing messages).
 
 ${instructionBlock}
+${supportBlock}
 
 Respond strictly in JSON array format, where each entry has the shape:
 [

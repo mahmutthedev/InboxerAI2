@@ -44,6 +44,7 @@ QDRANT_API_KEY=
 QDRANT_COLLECTION=inboxerai_threads
 GMAIL_PUBSUB_TOPIC=projects/<project>/topics/<topic>
 GOOGLE_PUBSUB_VERIFICATION_TOKEN=choose-a-shared-secret
+GMAIL_VERBOSE_LOGS=false
 ```
 
 What and why:
@@ -54,6 +55,7 @@ What and why:
 - `QDRANT_*`: Points to your vector database. Keep the API key blank for local unsecured use.
 - `GMAIL_PUBSUB_TOPIC`: The Gmail API sends push notifications to this Pub/Sub topic when new mail arrives.
 - `GOOGLE_PUBSUB_VERIFICATION_TOKEN`: Shared secret appended to the webhook URL (`...?token=SECRET`). The webhook rejects requests without it.
+- `GMAIL_VERBOSE_LOGS`: Set to `true` to enable per-message Gmail automation logs; `false` keeps the worker output concise.
 
 ---
 

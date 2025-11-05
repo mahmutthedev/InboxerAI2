@@ -12,6 +12,8 @@ import {
   shouldRespondToMessage,
 } from "@/lib/openai"
 
+const VERBOSE_GMAIL_LOGS = process.env.GMAIL_VERBOSE_LOGS === "true"
+
 export async function processGmailHistoryNotification(
   email: string,
   historyId: string
@@ -38,9 +40,11 @@ export async function processGmailHistoryNotification(
   const ingestState = await readIngestState()
   const startHistoryId = ingestState.historyId
   const replyInstructions = ingestState.replyInstructions ?? ""
-  console.info("[gmail-automation] Current history cursor", {
-    startHistoryId,
-  })
+  if (VERBOSE_GMAIL_LOGS) {
+    console.info("[gmail-automation] Current history cursor", {
+      startHistoryId,
+    })
+  }
 
   const incomingHistory = parseHistoryId(historyId)
   if (!incomingHistory) {
@@ -80,9 +84,11 @@ export async function processGmailHistoryNotification(
     account.tokens,
     startHistoryId
   )
-  console.info("[gmail-automation] History delta size", {
-    count: historyMessages.length,
-  })
+  if (VERBOSE_GMAIL_LOGS || historyMessages.length) {
+    console.info("[gmail-automation] History delta size", {
+      count: historyMessages.length,
+    })
+  }
 
   if (!historyMessages.length) {
     await updateIngestState({ historyId })
@@ -92,24 +98,32 @@ export async function processGmailHistoryNotification(
   const accountEmail = account.email.toLowerCase()
   const processedDetails: string[] = []
   let processedCount = 0
+  let skippedInboxCount = 0
+  let skippedSelfSentCount = 0
+  let classifierSkipCount = 0
+  let errorCount = 0
 
   const uniqueByMessage = new Map<string, string>()
   for (const message of historyMessages) {
     uniqueByMessage.set(message.messageId, message.threadId)
   }
 
-  console.info("[gmail-automation] Unique new messages", {
-    count: uniqueByMessage.size,
-  })
+  if (VERBOSE_GMAIL_LOGS || uniqueByMessage.size) {
+    console.info("[gmail-automation] Unique new messages", {
+      count: uniqueByMessage.size,
+    })
+  }
 
   const threadCache = new Map<string, Awaited<ReturnType<typeof fetchGmailThreadDetail>>>()
 
   for (const [messageId, threadId] of Array.from(uniqueByMessage.entries())) {
     try {
-      console.info("[gmail-automation] Processing message", {
-        messageId,
-        threadId,
-      })
+      if (VERBOSE_GMAIL_LOGS) {
+        console.info("[gmail-automation] Processing message", {
+          messageId,
+          threadId,
+        })
+      }
 
       const messageResult = await fetchGmailMessageDetail(
         account.tokens,
@@ -121,10 +135,13 @@ export async function processGmailHistoryNotification(
 
       // Only respond to messages that are currently in the inbox (incoming mail).
       if (!labelIds.includes("INBOX")) {
-        console.debug(
-          "[gmail-automation] Skipping message not in inbox",
-          messageId
-        )
+        skippedInboxCount += 1
+        if (VERBOSE_GMAIL_LOGS) {
+          console.debug(
+            "[gmail-automation] Skipping message not in inbox",
+            messageId
+          )
+        }
         processedDetails.push(
           `[skip] Message ${messageId} not labelled as INBOX.`
         )
@@ -132,10 +149,13 @@ export async function processGmailHistoryNotification(
       }
 
       if (messageDetail.from.toLowerCase().includes(accountEmail)) {
-        console.debug(
-          "[gmail-automation] Skipping self-sent message",
-          messageId
-        )
+        skippedSelfSentCount += 1
+        if (VERBOSE_GMAIL_LOGS) {
+          console.debug(
+            "[gmail-automation] Skipping self-sent message",
+            messageId
+          )
+        }
         processedDetails.push(
           `[skip] Message ${messageId} was sent by the account itself.`
         )
@@ -146,10 +166,12 @@ export async function processGmailHistoryNotification(
         threadCache.get(threadId) ??
         (await fetchGmailThreadDetail(account.tokens, threadId))
       threadCache.set(threadId, thread)
-      console.debug("[gmail-automation] Loaded thread summary", {
-        threadId,
-        subject: thread.subject,
-      })
+      if (VERBOSE_GMAIL_LOGS) {
+        console.debug("[gmail-automation] Loaded thread summary", {
+          threadId,
+          subject: thread.subject,
+        })
+      }
 
       const threadMessagesForPrompt = Array.isArray(thread.messages)
         ? [...thread.messages]
@@ -170,10 +192,13 @@ export async function processGmailHistoryNotification(
       })
 
       if (!shouldReply) {
-        console.debug(
-          "[gmail-automation] Classifier opted not to respond to message",
-          messageId
-        )
+        classifierSkipCount += 1
+        if (VERBOSE_GMAIL_LOGS) {
+          console.debug(
+            "[gmail-automation] Classifier opted not to respond to message",
+            messageId
+          )
+        }
         processedDetails.push(
           `[skip] Classifier skipped automated reply for message ${messageId}.`
         )
@@ -184,9 +209,11 @@ export async function processGmailHistoryNotification(
         `${thread.subject ?? ""}\n${messageDetail.bodyText}`,
         { limit: 6 }
       )
-      console.debug("[gmail-automation] Retrieved knowledge pairs", {
-        count: qaPairs.length,
-      })
+      if (VERBOSE_GMAIL_LOGS) {
+        console.debug("[gmail-automation] Retrieved knowledge pairs", {
+          count: qaPairs.length,
+        })
+      }
 
       const replyBody = await generateReplyFromKnowledge({
         threadSubject: thread.subject ?? messageDetail.subject,
@@ -199,9 +226,11 @@ export async function processGmailHistoryNotification(
         instructions: replyInstructions,
       })
 
-      console.debug("[gmail-automation] Generated reply body length", {
-        length: replyBody.length,
-      })
+      if (VERBOSE_GMAIL_LOGS) {
+        console.debug("[gmail-automation] Generated reply body length", {
+          length: replyBody.length,
+        })
+      }
 
       const references = messageDetail.referencesHeader
         ? messageDetail.referencesHeader.split(/\s+/).filter(Boolean)
@@ -225,6 +254,7 @@ export async function processGmailHistoryNotification(
         `[draft] Responded to ${messageDetail.from} in thread ${threadId}.`
       )
     } catch (error) {
+      errorCount += 1
       console.error("[gmail-automation] Draft creation failed", {
         messageId,
         threadId,
@@ -257,6 +287,10 @@ export async function processGmailHistoryNotification(
 
   console.info("[gmail-automation] Processing complete", {
     processedCount,
+    skippedInboxCount,
+    skippedSelfSentCount,
+    classifierSkipCount,
+    errorCount,
   })
 
   return { processed: processedCount, details: processedDetails }

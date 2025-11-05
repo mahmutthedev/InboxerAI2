@@ -56,9 +56,17 @@ export async function POST(
   }
 
   try {
+    const supportEmails = [
+      session.gmail?.emailAddress,
+      session.profile?.email,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .map((email) => email.toLowerCase())
+
     const detail = await fetchGmailThreadDetail(session.tokens, threadId)
     const qa = await extractQuestionsAndAnswersFromThread(detail, {
       instructions: payload.instructions,
+      supportEmails,
     })
 
     return NextResponse.json({

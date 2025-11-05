@@ -26,6 +26,9 @@ export async function GET() {
     })
 
     if (!response.ok) {
+      if (response.status === 404) {
+        return NextResponse.json({ collection, count: 0 })
+      }
       const text = await response.text()
       throw new Error(`Qdrant count failed: ${response.status} ${text}`)
     }
