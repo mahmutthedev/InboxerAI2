@@ -4,6 +4,8 @@ import { google } from "googleapis"
 import type { gmail_v1 } from "googleapis"
 import type { Credentials, OAuth2Client } from "google-auth-library"
 
+import { DEFAULT_PREVIEW_THREAD_LIMIT } from "@/lib/constants"
+
 export const GOOGLE_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/gmail.compose",
@@ -241,8 +243,7 @@ export async function fetchAllGmailThreadIds(
   const gmail = google.gmail({ version: "v1", auth: oauthClient })
 
   const maxThreads =
-    options.maxThreads ??
-    Number(process.env.INITIAL_INGEST_MAX_THREADS ?? "200")
+    options.maxThreads ?? DEFAULT_PREVIEW_THREAD_LIMIT
   const labelIds = options.labelIds ?? ["INBOX"]
 
   const ids: string[] = []

@@ -6,6 +6,7 @@ import {
   fetchAllGmailThreadIds,
 } from "@/lib/google-auth"
 import { readIngestState } from "@/lib/ingest-state"
+import { DEFAULT_PREVIEW_THREAD_LIMIT } from "@/lib/constants"
 
 interface ListRequestBody {
   maxThreads?: number
@@ -38,22 +39,14 @@ export async function POST(request: NextRequest) {
     // optional body
   }
 
-  const envMaxThreadsRaw = Number(
-    process.env.INITIAL_INGEST_MAX_THREADS ?? "200"
-  )
   const requestedMaxThreads =
-    typeof body.maxThreads === "number" ? body.maxThreads : undefined
+    typeof body.maxThreads === "number" &&
+    Number.isFinite(body.maxThreads) &&
+    body.maxThreads > 0
+      ? Math.floor(body.maxThreads)
+      : DEFAULT_PREVIEW_THREAD_LIMIT
 
-  const resolvedMaxThreads =
-    typeof requestedMaxThreads === "number" &&
-    Number.isFinite(requestedMaxThreads) &&
-    requestedMaxThreads > 0
-      ? requestedMaxThreads
-      : Number.isFinite(envMaxThreadsRaw) && envMaxThreadsRaw > 0
-      ? envMaxThreadsRaw
-      : 200
-
-  const maxThreads = Math.max(1, Math.floor(resolvedMaxThreads))
+  const maxThreads = Math.max(1, requestedMaxThreads)
 
   try {
     const state = await readIngestState()

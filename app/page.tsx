@@ -7,16 +7,9 @@ import {
   type GoogleUserProfile,
 } from "@/lib/google-auth"
 import { ConnectGoogleButton } from "@/components/connect-google-button"
-import { InitialIngestPanel } from "@/components/initial-ingest-panel"
 import { GoogleWatchPanel } from "@/components/google-watch-panel"
+import { InitialIngestPanel } from "@/components/initial-ingest-panel"
 
-const INITIAL_INGEST_MAX_THREADS = Number(
-  process.env.INITIAL_INGEST_MAX_THREADS ?? "200"
-)
-const NORMALIZED_INITIAL_INGEST_MAX_THREADS =
-  Number.isFinite(INITIAL_INGEST_MAX_THREADS) && INITIAL_INGEST_MAX_THREADS > 0
-    ? Math.floor(INITIAL_INGEST_MAX_THREADS)
-    : null
 const HAS_PUBSUB_TOPIC = Boolean(process.env.GMAIL_PUBSUB_TOPIC)
 
 interface IndexPageProps {
@@ -60,7 +53,6 @@ export default async function IndexPage({ searchParams = {} }: IndexPageProps) {
             />
             <InitialIngestPanel
               gmailThreadCount={gmail?.threadsTotal}
-              initialIngestMaxThreads={NORMALIZED_INITIAL_INGEST_MAX_THREADS}
             />
           </>
         ) : null}

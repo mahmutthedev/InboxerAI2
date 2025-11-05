@@ -5,15 +5,15 @@ import { Loader2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { DEFAULT_PREVIEW_THREAD_LIMIT } from "@/lib/constants"
 
 interface InitialIngestPanelProps {
   gmailThreadCount?: number
-  initialIngestMaxThreads?: number | null
 }
 
 const PREVIEW_CONCURRENCY = Math.max(
   1,
-  Number(process.env.NEXT_PUBLIC_INITIAL_PREVIEW_CONCURRENCY ?? "5")
+  Number(process.env.NEXT_PUBLIC_SYNC_CONCURRENCY ?? "5") || 5
 )
 
 interface PreviewThread {
@@ -45,14 +45,7 @@ interface IngestStateSummary {
 
 export function InitialIngestPanel({
   gmailThreadCount,
-  initialIngestMaxThreads,
 }: InitialIngestPanelProps) {
-  const initialPreviewLimit =
-    typeof initialIngestMaxThreads === "number" &&
-    Number.isFinite(initialIngestMaxThreads) &&
-    initialIngestMaxThreads > 0
-      ? Math.floor(initialIngestMaxThreads)
-      : null
   const [pointCount, setPointCount] = useState<number | null>(null)
   const [isFetchingStats, setIsFetchingStats] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -70,11 +63,10 @@ export function InitialIngestPanel({
   const [rulesDraft, setRulesDraft] = useState("")
   const [isRulesEditing, setIsRulesEditing] = useState(false)
   const [isSavingRules, setIsSavingRules] = useState(false)
-  const [previewLimitValue, setPreviewLimitValue] = useState<number | null>(
-    initialPreviewLimit
-  )
+  const [previewLimitValue, setPreviewLimitValue] =
+    useState<number | null>(DEFAULT_PREVIEW_THREAD_LIMIT)
   const [previewLimitDraft, setPreviewLimitDraft] = useState(
-    initialPreviewLimit ? String(initialPreviewLimit) : ""
+    String(DEFAULT_PREVIEW_THREAD_LIMIT)
   )
   const [isPreviewLimitEditing, setIsPreviewLimitEditing] = useState(false)
   const [isSavingPreviewLimit, setIsSavingPreviewLimit] = useState(false)
@@ -246,7 +238,7 @@ export function InitialIngestPanel({
       typeof ingestState?.previewMaxThreads === "number"
         ? ingestState.previewMaxThreads
         : null
-    const resolvedLimit = savedLimit ?? initialPreviewLimit ?? null
+    const resolvedLimit = savedLimit ?? DEFAULT_PREVIEW_THREAD_LIMIT
 
     if (previewLimitValue !== resolvedLimit) {
       setPreviewLimitValue(resolvedLimit)
@@ -257,7 +249,6 @@ export function InitialIngestPanel({
     }
   }, [
     ingestState?.previewMaxThreads,
-    initialPreviewLimit,
     isPreviewLimitEditing,
     previewLimitValue,
   ])
@@ -306,7 +297,7 @@ export function InitialIngestPanel({
     const current =
       typeof previewLimitValue === "number" && previewLimitValue > 0
         ? previewLimitValue
-        : initialPreviewLimit
+        : DEFAULT_PREVIEW_THREAD_LIMIT
     setPreviewLimitDraft(current ? String(current) : "")
   }
 
@@ -315,7 +306,7 @@ export function InitialIngestPanel({
     const current =
       typeof previewLimitValue === "number" && previewLimitValue > 0
         ? previewLimitValue
-        : initialPreviewLimit
+        : DEFAULT_PREVIEW_THREAD_LIMIT
     setPreviewLimitDraft(current ? String(current) : "")
   }
 
@@ -375,7 +366,7 @@ export function InitialIngestPanel({
     const limitForPreview =
       typeof previewLimitValue === "number" && previewLimitValue > 0
         ? previewLimitValue
-        : initialPreviewLimit
+        : DEFAULT_PREVIEW_THREAD_LIMIT
     const listRequestPayload =
       limitForPreview && Number.isFinite(limitForPreview)
         ? { maxThreads: limitForPreview }
@@ -658,7 +649,7 @@ export function InitialIngestPanel({
   const effectivePreviewLimit =
     typeof previewLimitValue === "number" && previewLimitValue > 0
       ? previewLimitValue
-      : initialPreviewLimit
+      : DEFAULT_PREVIEW_THREAD_LIMIT
 
   return (
     <div className="rounded-xl border border-border bg-card p-6 shadow-sm">

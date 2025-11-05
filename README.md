@@ -39,8 +39,6 @@ OPENAI_API_KEY=your-openai-api-key
 OPENAI_RESPONSE_MODEL=gpt-4o-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 NEXT_PUBLIC_SYNC_CONCURRENCY=5
-INITIAL_INGEST_MAX_THREADS=200
-NEXT_PUBLIC_INITIAL_PREVIEW_CONCURRENCY=5
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
 QDRANT_COLLECTION=inboxerai_threads
@@ -52,9 +50,7 @@ What and why:
 
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`: Created in Google Cloud. Required for OAuth so users can grant Gmail access.
 - `OPENAI_*`: Selects the models used for Q&A extraction (Responses API) and embeddings (searchable vectors).
-- `NEXT_PUBLIC_SYNC_CONCURRENCY`: Caps the number of threads processed at once so you can throttle API usage.
-- `INITIAL_INGEST_MAX_THREADS`: Limits how many historical threads are shown during the first ingest preview.
-- `NEXT_PUBLIC_INITIAL_PREVIEW_CONCURRENCY`: Controls how many threads are fetched in parallel for the preview UI.
+- `NEXT_PUBLIC_SYNC_CONCURRENCY`: Caps the number of threads processed at once so you can throttle API usage (used for both preview and syncing).
 - `QDRANT_*`: Points to your vector database. Keep the API key blank for local unsecured use.
 - `GMAIL_PUBSUB_TOPIC`: The Gmail API sends push notifications to this Pub/Sub topic when new mail arrives.
 - `GOOGLE_PUBSUB_VERIFICATION_TOKEN`: Shared secret appended to the webhook URL (`...?token=SECRET`). The webhook rejects requests without it.
